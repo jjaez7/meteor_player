@@ -1,0 +1,2 @@
+-keep class notification.listener.service.** { *; }
+-keep public class * extends android.service.notification.NotificationListenerService
