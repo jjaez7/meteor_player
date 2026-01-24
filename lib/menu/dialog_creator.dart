@@ -65,7 +65,7 @@ void showCreatorDialog(BuildContext context) {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _buildCreatorCard(
-                            "Myeongwan Jung",
+                            "MinChan Kim",
                             "UI/UX Design",
                             accentColor,
                           ),
@@ -73,8 +73,8 @@ void showCreatorDialog(BuildContext context) {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _buildCreatorCard(
-                            "Chicken",
-                            "Backend",
+                            "Myeongwan Jeung",
+                            "Special Thanks To",
                             accentColor,
                           ),
                         ),
@@ -89,14 +89,14 @@ void showCreatorDialog(BuildContext context) {
                         ),
                         const SizedBox(height: 16),
                         _buildCreatorRow(
-                          "Myeongwan Jung",
+                          "MinChan Kim",
                           "UI/UX Design",
                           accentColor,
                         ),
                         const SizedBox(height: 16),
                         _buildCreatorRow(
-                          "Chicken",
-                          "Backend Engine",
+                          "Myeongwan Jeung",
+                          "Special Thanks To",
                           accentColor,
                         ),
                       ],

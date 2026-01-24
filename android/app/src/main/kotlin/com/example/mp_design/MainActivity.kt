@@ -4,6 +4,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
 import android.content.Context
+import android.content.ComponentName 
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -22,9 +23,6 @@ class MainActivity: AudioServiceActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    private var lastTitle: String? = null
-    private var lastAlbumArt: ByteArray? = null
-
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -37,10 +35,14 @@ class MainActivity: AudioServiceActivity() {
                     audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
                     result.success(true)
                 }
+                // [추가] 앱 시작 시 현재 재생 중인 정보를 즉시 요청받는 핸들러
                 "getCurrentStatus" -> {
                     val status = getMediaStatus()
-                    if (status != null) result.success(status)
-                    else result.error("UNAVAILABLE", "No active media session", null)
+                    if (status != null) {
+                        result.success(status)
+                    } else {
+                        result.error("UNAVAILABLE", "No active media session", null)
+                    }
                 }
                 else -> result.notImplemented()
             }
@@ -54,58 +56,49 @@ class MainActivity: AudioServiceActivity() {
                 }
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
-                    handler.removeCallbacksAndMessages(null)
                 }
             }
         )
     }
 
+    // [핵심 로직 분리] 현재 재생 정보를 Map으로 반환하는 공용 함수
     private fun getMediaStatus(): Map<String, Any>? {
-        return try {
-            val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+    return try {
+        val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val componentName = ComponentName(
+            "com.example.mp_design",
+            "com.notification_listener_service.NotificationListenerServiceImpl"
+        )
+        val controllers = mediaSessionManager.getActiveSessions(componentName)
+
+        if (controllers.isNotEmpty()) {
+            val controller = controllers[0]
+            val playbackState = controller.playbackState
+            val metadata = controller.metadata
+
+            // [추가] 앨범 아트 가져오기 (Bitmap -> ByteArray)
+            val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) 
+                      ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
             
-            // 핵심 수정: null을 전달하여 '모든' 활성 세션을 가져옵니다. 
-            // 컴포넌트를 지정하면 해당 앱의 세션만 가져오려 하기 때문에 다른 앱(유튜브 등)을 못 잡을 수 있습니다.
-            val controllers = mediaSessionManager.getActiveSessions(null)
+            val albumArtBytes = bitmap?.let {
+            val scaledBitmap = Bitmap.createScaledBitmap(it, 400, 400, true)
+            val stream = java.io.ByteArrayOutputStream()
+            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream) // JPEG 80%로 압축
+            stream.toByteArray()
+            }
 
-            if (controllers.isNotEmpty()) {
-                // 현재 실제로 재생 중인(Active) 세션을 우선적으로 찾습니다.
-                val controller = controllers.find { it.playbackState?.state == PlaybackState.STATE_PLAYING } 
-                                 ?: controllers[0]
-                
-                val playbackState = controller.playbackState
-                val metadata = controller.metadata
-
-                val currentTitle = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Unknown"
-                
-                // 앨범 아트 추출 로직 보강
-                if (currentTitle != lastTitle) {
-                    val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) 
-                                 ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                    
-                    lastAlbumArt = bitmap?.let {
-                        // 300x300 정도로 리사이징하여 전송 부하를 줄임
-                        val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
-                        val stream = ByteArrayOutputStream()
-                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 75, stream)
-                        stream.toByteArray()
-                    }
-                    lastTitle = currentTitle
-                }
-
-                mutableMapOf<String, Any>(
-                    "position" to (playbackState?.position ?: 0L),
-                    "duration" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
-                    "isPlaying" to (playbackState?.state == PlaybackState.STATE_PLAYING),
-                    "title" to currentTitle,
-                    "artist" to (metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "Unknown Artist"),
-                    "albumArt" to (lastAlbumArt ?: ByteArray(0))
-                )
-            } else null
-        } catch (e: Exception) {
-            null
-        }
+            mutableMapOf<String, Any>(
+                "position" to (playbackState?.position ?: 0L),
+                "duration" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
+                "isPlaying" to (playbackState?.state == PlaybackState.STATE_PLAYING),
+                "title" to (metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Unknown"),
+                "albumArt" to (albumArtBytes ?: ByteArray(0)) // 이미지가 없으면 빈 배열
+            )
+        } else null
+    } catch (e: Exception) {
+        null
     }
+}
 
     private fun startStatusUpdates() {
         handler.post(object : Runnable {
@@ -114,6 +107,7 @@ class MainActivity: AudioServiceActivity() {
                 if (data != null) {
                     eventSink?.success(data)
                 }
+                
                 if (eventSink != null) {
                     handler.postDelayed(this, 1000)
                 }

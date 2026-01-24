@@ -19,14 +19,14 @@ class VinylDisk extends StatelessWidget {
     this.artist = "",
   });
 
-  @override
+@override
   Widget build(BuildContext context) {
     final Widget albumArt = ClipOval(
       child: albumArtBytes != null
           ? Image.memory(
               albumArtBytes!,
               fit: BoxFit.cover,
-              filterQuality: FilterQuality.medium, // 고품질보다 medium이 성능에 유리함
+              filterQuality: FilterQuality.medium,
               isAntiAlias: false,
               gaplessPlayback: true,
             )
@@ -76,28 +76,26 @@ class VinylDisk extends StatelessWidget {
                   ),
                 ),
 
-                // 중앙 라벨 각인 (RepaintBoundary 필수)
+                // 중앙 라벨 각인 (데이터 갱신을 위해 RepaintBoundary 제거)
                 IgnorePointer(
-                  child: RepaintBoundary(
-                    child: SizedBox(
-                      width: size * 0.45,
-                      height: size * 0.45,
-                      child: CustomPaint(
-                        painter: CircularTextPainter(
-                          text: "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            fontSize: size * 0.025,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 3,
-                          ),
+                  child: SizedBox(
+                    width: size * 0.45,
+                    height: size * 0.45,
+                    child: CustomPaint(
+                      painter: CircularTextPainter(
+                        text: "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          fontSize: size * 0.025,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 3,
                         ),
                       ),
                     ),
                   ),
                 ),
 
-                // 중앙 앨범 아트
+                // 중앙 앨범 아트 (이미지 교체를 위해 RepaintBoundary 제거)
                 Container(
                   width: size * 0.38,
                   height: size * 0.38,
@@ -105,7 +103,7 @@ class VinylDisk extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: Color(0xFF121212),
                   ),
-                  child: RepaintBoundary(child: albumArt),
+                  child: albumArt, 
                 ),
               ],
             ),
