@@ -24,7 +24,7 @@ class VinylPlayerScreen extends StatefulWidget {
 }
 
 class _VinylPlayerScreenState extends State<VinylPlayerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isMinimalMode = false;
   bool _isSurrealMode = false;
   // 기존 20줄짜리 코드를 이렇게 줄입니다.
@@ -75,6 +75,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // ..addListener(() => setState(() {})) 가 반드시 포함되어야 합니다.
     _lpController = AnimationController(
@@ -94,6 +95,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       _fetchInitialStatus();
     });
   }
+
+  @override
+void dispose() {
+  // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
+  WidgetsBinding.instance.removeObserver(this);
+  _lpController.dispose();
+  _needleController.dispose();
+  super.dispose();
+}
 
   Future<void> _loadSavedColors() async {
     final savedColors = await ColorManager.loadSettings();
@@ -188,7 +198,7 @@ void _listenToMusic() async {
 void _handleMediaStatusUpdate(dynamic data) {
   if (data == null || !mounted) return;
 
-  bool isPlayingNow = false;
+  bool isPlayingNow = _isPlaying; // 기본값 유지
 
   try {
     if (data is Map) {
@@ -201,52 +211,84 @@ void _handleMediaStatusUpdate(dynamic data) {
   } catch (e) {
     debugPrint("Media status parsing error: $e");
   }
+  
+  setState(() {
+    _isPlaying = isPlayingNow;
+  });
 
-  // 🚀 [핵심 수정] 현재 앱 상태와 들어온 상태가 다를 때만 실행
-  // 이 조건이 있어야 다음 곡으로 넘길 때 발생하는 '잠깐의 멈춤 신호'를 무시합니다.
+  // 🚀 [수정] 상태가 변했을 때만 실행
   if (_isPlaying != isPlayingNow) {
     setState(() {
       _isPlaying = isPlayingNow;
     });
 
     if (_isPlaying) {
-      // [재생 상태]
-      _lpController.repeat();
-      _needleController.forward();
+      // [재생 시작]
+      _lpController.repeat(); // LP 즉시 회전
+      _needleController.forward(); // 바늘 즉시 내림
       HapticFeedback.lightImpact();
     } else {
-      // [정지 상태]
-      _needleController.reverse();
+      // [정지]
+      _needleController.reverse(); // 바늘 즉시 올림
       
-      Future.delayed(const Duration(milliseconds: 300), () {
-        // 지연 시간 후에도 여전히 정지 상태일 때만 LP를 멈춤
-        if (mounted && !_isPlaying) {
-          _lpController.stop();
-        }
-      });
+      // 🚀 [수정] 딜레이 없이 즉시 멈추거나, 
+      // 바늘이 올라가는 시간(300ms)만 살짝 기다렸다가 확실히 멈춤
+      _lpController.stop(); 
+      
       HapticFeedback.mediumImpact();
     }
   }
 }
 
-  Future<void> _fetchInitialStatus() async {
+@override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 유튜브 뮤직 등 다른 곳에서 조작하고 돌아왔을 때 즉시 상태 동기화
+      _fetchInitialStatus();
+    }
+  }
+
+Future<void> _fetchInitialStatus() async {
     try {
       const platform = MethodChannel('com.meteor.player/media_control');
       final dynamic result = await platform.invokeMethod('getCurrentStatus');
 
       if (result != null && mounted) {
         final data = Map<String, dynamic>.from(result);
+        final Uint8List? artData = data['albumArt'] as Uint8List?;
+
+        // 1. 텍스트 정보 및 재생 상태 즉시 업데이트
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
+          // 네이티브에서 넘어온 artist 정보를 대문자로 변환하여 저장
           _currentArtist = (data['artist'] ?? "METEOR PLAYER").toUpperCase();
           _isPlaying = data['isPlaying'] ?? false;
-          if (data['albumArt'] != null)
-            _albumArtBytes = data['albumArt'] as Uint8List;
+          
+          // 앨범 아트 데이터가 유효한 경우에만 바이트 데이터 저장
+          if (artData != null && artData.isNotEmpty) {
+            _albumArtBytes = artData;
+          }
         });
 
-        // 초기 상태가 재생 중이면 즉시 애니메이션 시작
+        // 2. [추가] 첫 곡 색상 추출 로직
+        // 이미지가 존재하고 데이터가 충분할 때만 테마 색상을 추출합니다.
+        if (artData != null && artData.length > 500) {
+          MusicColorLogic.extractThemeColors(artData).then((colors) {
+            if (mounted) {
+              setState(() {
+                _bgColor = colors['bg']!;
+                _playBtnColor = colors['btn']!;
+                _barColor = colors['bar']!;
+                _textColor = colors['text']!;
+                _artistColor = colors['artist']!;
+              });
+            }
+          });
+        }
+
+        // 3. 초기 상태가 재생 중이면 애니메이션 즉시 가동
         if (_isPlaying) {
-          _lpController.repeat();
+          if (!_lpController.isAnimating) _lpController.repeat();
           _needleController.forward();
         }
       }
@@ -360,21 +402,27 @@ void _handleMediaStatusUpdate(dynamic data) {
                       ),
 
                       // --- 바늘 (LP 모드일 때만 표시) ---
-                      if (!_isMinimalMode)
-                        _buildEdit(
-                          config.needlePos,
-                          160,
-                          config.needleSize * 2.0,
-                          (d) => config.needlePos += d,
-                          (s) => config.needleSize = (config.needleSize + s)
-                              .clamp(100.0, 400.0),
-                          NeedleWidget(
-                            controller: _needleController,
-                            needleSize: config.needleSize,
-                            bgColor: _bgColor,
-                            accentColor: _playBtnColor,
-                          ),
-                        ),
+if (!_isMinimalMode)
+  _buildEdit(
+    config.needlePos,
+    160,
+    config.needleSize * 2.0,
+    (d) => config.needlePos += d,
+    (s) => config.needleSize = (config.needleSize + s)
+        .clamp(100.0, 400.0),
+    // 🚀 렉 방지 핵심: AnimatedBuilder가 이 부분만 콕 집어서 다시 그립니다.
+    AnimatedBuilder(
+      animation: _needleController,
+      builder: (context, child) {
+        return NeedleWidget(
+          controller: _needleController, // 컨트롤러의 변화를 감지하여 부드럽게 움직임
+          needleSize: config.needleSize,
+          bgColor: _bgColor,
+          accentColor: _playBtnColor,
+        );
+      },
+    ),
+  ),
 
                       // --- 제목 (유지) ---
                       _buildEdit(

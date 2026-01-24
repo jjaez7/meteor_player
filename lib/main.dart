@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:mp_design/permission_guard.dart';
 import 'player_screen.dart';
 
 late MyAudioHandler audioHandler;
@@ -66,6 +67,15 @@ class MyAudioHandler extends BaseAudioHandler {
     // 2. 네이티브로부터의 상태 업데이트를 구독하여 audioHandler의 메타데이터 갱신
     _statusChannel.receiveBroadcastStream().listen((data) {
       final mediaData = Map<String, dynamic>.from(data);
+      final bool isPlaying = mediaData['isPlaying'] ?? false;
+
+      playbackState.add(playbackState.value.copyWith(
+        playing: isPlaying,
+        updatePosition: Duration(milliseconds: mediaData['position'] as int),
+        bufferedPosition: Duration(milliseconds: mediaData['position'] as int),
+        // 재생 중이 아닐 때는 속도를 0.0으로, 재생 중일 때는 1.0으로 설정
+        speed: isPlaying ? 1.0 : 0.0,
+      ));
 
       // 현재 재생 정보를 audio_service 내부 상태로 동기화 (선택 사항이지만 권장)
       mediaItem.add(
@@ -114,7 +124,9 @@ class MeteorPlayer extends StatelessWidget {
           bodyMedium: TextStyle(letterSpacing: -0.5),
         ),
       ),
-      home: const VinylPlayerScreen(),
+      home: PermissionGuard(
+        child: const VinylPlayerScreen(),
+      ),
     );
   }
 }
