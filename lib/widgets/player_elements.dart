@@ -89,7 +89,9 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
   @override
   Widget build(BuildContext context) {
     // 이동 중(Seeking)일 때는 시스템 값(widget.factor)을 무시합니다.
-    final displayFactor = (_dragFactor ?? widget.factor).clamp(0.0, 1.0);
+    final displayFactor = (_isSeeking && _dragFactor != null) 
+    ? _dragFactor!.clamp(0.0, 1.0) 
+    : widget.factor.clamp(0.0, 1.0);
 
     return GestureDetector(
       onHorizontalDragUpdate: (details) {
@@ -102,7 +104,7 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
       onHorizontalDragEnd: (_) async {
         // [핵심 수정] 손을 떼고 바로 리셋하지 않고 0.5초 정도 기다립니다.
         // 네이티브에서 "나 여기까지 이동했어!"라고 스트림을 쏠 시간을 주는 것입니다.
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 1000));
         if (mounted) {
           setState(() {
             _dragFactor = null;

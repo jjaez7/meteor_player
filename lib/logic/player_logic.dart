@@ -38,7 +38,7 @@ class PlayerLogic {
     debugPrint("✅ 레이아웃 저장소 초기화 완료");
   }
 
-  // --- [3] 음악 제어 로직 (신규 추가) ---
+  // --- [3] 음악 제어 로직 ---
 
   /// 재생/일시정지 토글
   static void togglePlay({
@@ -64,27 +64,14 @@ class PlayerLogic {
   }
 
   /// 특정 위치로 재생 지점 이동 (Seek)
+  /// relativePos: 0.0 ~ 1.0 사이의 비율
   static Future<void> seekTo(double relativePos) async {
     try {
-      HapticFeedback.lightImpact();
-
-      // 현재 곡의 전체 길이를 확인하기 위해 네이티브 상태 요청
       const platform = MethodChannel('com.meteor.player/media_control');
-      final dynamic result = await platform.invokeMethod('getCurrentStatus');
-
-      if (result != null) {
-        final data = Map<String, dynamic>.from(result);
-        final int duration = data['duration'] ?? 0;
-
-        if (duration > 0) {
-          final int seekMs = (duration * relativePos).toInt();
-          // 시스템 핸들러를 통해 실제 이동 명령 전송
-          await audioHandler.seek(Duration(milliseconds: seekMs));
-          debugPrint("🎯 Seek 명령 전송 완료: $seekMs ms");
-        }
-      }
+      // 비율(0.0~1.0)을 네이티브로 직접 쏩니다.
+      await platform.invokeMethod('seek', {'position': relativePos.clamp(0.0, 1.0)});
     } catch (e) {
-      debugPrint("❌ Seek 오류 발생: $e");
+      debugPrint("❌ Seek 오류: $e");
     }
   }
 }
