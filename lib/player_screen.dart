@@ -16,6 +16,7 @@ import 'logic/music_controller.dart';
 import 'logic/player_logic.dart';
 import 'widgets/surreal_player_view.dart';
 import 'widgets/classic_vinyl_view.dart';
+import 'widgets/stream_progress_bar.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -347,8 +348,8 @@ Future<void> _fetchInitialStatus() async {
                             : FilterQuality.low,
                         isAntiAlias: true,
                         // LP 모드일 땐 작게 캐싱해서 메모리를 아끼고, 앨범 모드일 땐 원본 화질 유지
-                        cacheWidth: _isMinimalMode ? null : 400,
-                        cacheHeight: _isMinimalMode ? null : 400,
+                        cacheWidth: _isMinimalMode ? null : 300,
+                        cacheHeight: _isMinimalMode ? null : 300,
                       ),
                     ),
                   ),
@@ -622,36 +623,19 @@ if (!_isMinimalMode)
   }
 
   // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
-  Widget _buildProgressBarStream(double barWidth) {
-    return SizedBox(
-      key: _progressKey,
-      width: barWidth,
-      child: StreamBuilder(
-        stream: const EventChannel(
-          'com.meteor.player/media_status',
-        ).receiveBroadcastStream(),
-        builder: (context, snapshot) {
-          double factor = 0.0;
-          if (snapshot.hasData && snapshot.data != null) {
-            try {
-              final data = Map<String, dynamic>.from(snapshot.data);
-              final int pos = data['position'] ?? 0;
-              final int dur = data['duration'] ?? 1;
-              factor = (pos / dur).clamp(0.0, 1.0);
-            } catch (e) {}
-          }
-
-          return ProgressBarWidget(
-            width: barWidth,
-            factor: factor,
-            bgColor: _bgColor,
-            barColor: _barColor,
-            onSeek: PlayerLogic.seekTo, // 외부 로직 연결
-          );
-        },
-      ),
-    );
-  }
+// 2. 프로그레스 바 스트림 빌더
+Widget _buildProgressBarStream(double barWidth) {
+  return SizedBox(
+    key: _progressKey,
+    width: barWidth,
+    // 🚀 핵심: 복잡한 StreamBuilder 로직은 이제 StreamProgressBar 파일 안에 들어있습니다.
+    child: StreamProgressBar(
+      barWidth: barWidth,
+      bgColor: _bgColor,
+      barColor: _barColor,
+    ),
+  );
+}
 
   // --- 위젯 빌더 함수들 ---
 
