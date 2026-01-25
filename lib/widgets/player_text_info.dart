@@ -31,7 +31,7 @@ class MarqueeTitleWidget extends StatelessWidget {
           letterSpacing: -1.0,
         ),
         // [수정 포인트 1] 화면 너비보다 충분히 큰 여백을 주어 끝부분 노출 방지
-        blankSpace: 500.0, 
+        blankSpace: 325.0, 
         velocity: 50.0,
         // [수정 포인트 2] 멈췄을 때의 정지 시간을 확실히 보장
         pauseAfterRound: const Duration(seconds: 3), 
