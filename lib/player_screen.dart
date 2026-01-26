@@ -4,19 +4,20 @@ import 'package:notification_listener_service/notification_listener_service.dart
 import 'models/player_config.dart';
 import 'utils/layout_engine.dart';
 import 'widgets/editable_element.dart';
-import 'widgets/vinyl_component.dart';
+//import 'widgets/vinyl_component.dart';
 import 'widgets/player_app_bar.dart';
 import 'menu/menu_main.dart';
 import 'color_manager.dart';
-import 'main.dart';
+//import 'main.dart';
 import 'widgets/player_elements.dart';
 import 'widgets/player_text_info.dart';
 import 'widgets/needle_component.dart';
 import 'logic/music_controller.dart';
 import 'logic/player_logic.dart';
-import 'widgets/surreal_player_view.dart';
+//import 'widgets/surreal_player_view.dart';
 import 'widgets/classic_vinyl_view.dart';
 import 'widgets/stream_progress_bar.dart';
+import 'dart:ui';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -27,7 +28,7 @@ class VinylPlayerScreen extends StatefulWidget {
 class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isMinimalMode = false;
-  bool _isSurrealMode = false;
+  //bool _isSurrealMode = false;
   // 기존 20줄짜리 코드를 이렇게 줄입니다.
   Future<void> _handleAbsoluteColorReset() async {
     final newColors = await PlayerLogic.handleAbsoluteColorReset();
@@ -54,7 +55,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // 클래스 상단 변수 선언부
   final GlobalKey _progressKey = GlobalKey();
-  final GlobalKey _titleKey = GlobalKey();
+  //final GlobalKey _titleKey = GlobalKey();
 
   late AnimationController _lpController, _needleController;
   bool isEditMode = false, _isPlaying = false;
@@ -72,7 +73,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _barColor = const Color(0xFFB1A1D0);
   Color _playBtnColor = const Color(0xFF735DA5);
 
-  @override
   @override
   void initState() {
     super.initState();
@@ -93,18 +93,22 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _listenToMusic();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchInitialStatus();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _fetchInitialStatus();
+        }
+      });
     });
   }
 
   @override
-void dispose() {
-  // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
-  WidgetsBinding.instance.removeObserver(this);
-  _lpController.dispose();
-  _needleController.dispose();
-  super.dispose();
-}
+  void dispose() {
+    // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
+    WidgetsBinding.instance.removeObserver(this);
+    _lpController.dispose();
+    _needleController.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadSavedColors() async {
     final savedColors = await ColorManager.loadSettings();
@@ -145,103 +149,118 @@ void dispose() {
     PlayerLogic.updateColor(target, newColor); // 저장 로직은 외부로
   }
 
-void _listenToMusic() async {
-  bool isGranted = await NotificationListenerService.isPermissionGranted();
-  if (!isGranted) return;
+  void _listenToMusic() async {
+    bool isGranted = await NotificationListenerService.isPermissionGranted();
+    if (!isGranted) return;
 
-  NotificationListenerService.notificationsStream.listen((event) async {
-    if (event.hasRemoved == true || event.title == null) return;
+    NotificationListenerService.notificationsStream.listen((event) async {
+      if (event.hasRemoved == true || event.title == null) return;
 
-    if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
-      // 🚀 [수정] 제목이 같더라도 아티스트가 'UNKNOWN'인 상태라면 업데이트를 허용합니다.
-      // 이렇게 해야 앱 시작 시 누락되었던 정보를 다시 받아올 수 있습니다.
-      if (_currentTitle == event.title && _currentArtist != "UNKNOWN") {
-        return;
-      }
-
-      Uint8List? art = event.largeIcon ?? event.appIcon;
-      Map<String, Color>? colors;
-      if (art != null) {
-        colors = await MusicColorLogic.extractThemeColors(art);
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _currentTitle = event.title!;
-        // 🚀 [수정] content가 없을 경우 "Unknown"을 명시적으로 넣어줍니다.
-        _currentArtist = (event.content ?? "Unknown").toUpperCase();
-        if (art != null) _albumArtBytes = art;
-        _isPlaying = true; 
-
-        if (colors != null) {
-          _bgColor = colors['bg']!;
-          _playBtnColor = colors['btn']!;
-          _barColor = colors['bar']!;
-          _textColor = colors['text']!;
-          _artistColor = colors['artist']!;
+      if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
+        // 제목이 같고 아티스트가 유효하면 불필요한 리빌드 방지
+        if (_currentTitle == event.title &&
+            _currentArtist != "UNKNOWN" &&
+            _currentArtist != "Unknown") {
+          return;
         }
-      });
 
-      _lpController.repeat(); 
-      _needleController.forward();
-    }
-  });
+        //Uint8List? art = event.largeIcon ?? event.appIcon;
 
-  const EventChannel('com.meteor.player/media_status')
-      .receiveBroadcastStream()
-      .listen((status) {
-    _handleMediaStatusUpdate(status);
-  });
-}
+        if (!mounted) return;
+
+        // 1. [즉시 업데이트] 이미지와 텍스트부터 먼저 바꿉니다 (callback 제거)
+        setState(() {
+          _currentTitle = event.title!;
+          _currentArtist = (event.content ?? "Unknown").toUpperCase();
+          /*if (art != null) {
+            _albumArtBytes = art;
+          }*/
+          _isPlaying = true;
+        });
+
+        await _fetchInitialStatus();
+
+        if (mounted) {
+          setState(() {
+            _isPlaying = true; 
+          });
+        }
+
+        // 2. [비동기 업데이트] 색상 추출은 백그라운드에서 천천히 수행
+        if (_albumArtBytes != null) {
+          MusicColorLogic.extractThemeColors(_albumArtBytes!).then((colors) {
+            if (mounted && colors != null) {
+              setState(() {
+                _bgColor = colors['bg']!;
+                _playBtnColor = colors['btn']!;
+                _barColor = colors['bar']!;
+                _textColor = colors['text']!;
+                _artistColor = colors['artist']!;
+              });
+            }
+          });
+        }
+
+        _lpController.repeat();
+        _needleController.forward();
+      }
+    });
+
+    const EventChannel(
+      'com.meteor.player/media_status',
+    ).receiveBroadcastStream().listen((status) {
+      _handleMediaStatusUpdate(status);
+    });
+  }
 
   // 미디어 상태 업데이트 로직도 별도 함수로 빼면 더 깨끗합니다.
 void _handleMediaStatusUpdate(dynamic data) {
   if (data == null || !mounted) return;
 
-  bool isPlayingNow = _isPlaying; // 기본값 유지
+  bool incomingPlayingState = _isPlaying; 
 
   try {
     if (data is Map) {
-      isPlayingNow = data['isPlaying'] ?? false;
+      incomingPlayingState = data['isPlaying'] ?? _isPlaying;
     } else if (data is String) {
-      isPlayingNow = (data == 'playing');
+      incomingPlayingState = (data == 'playing');
     } else if (data is bool) {
-      isPlayingNow = data;
+      incomingPlayingState = data;
     }
   } catch (e) {
     debugPrint("Media status parsing error: $e");
   }
-  
-  setState(() {
-    _isPlaying = isPlayingNow;
-  });
 
-  // 🚀 [수정] 상태가 변했을 때만 실행
-  if (_isPlaying != isPlayingNow) {
+  // 🚀 [핵심 수정] 
+  // 다른 앱에서 멈췄을 때(false가 들어왔을 때) 확실히 멈추도록 강제 제어합니다.
+  if (_isPlaying != incomingPlayingState) {
     setState(() {
-      _isPlaying = isPlayingNow;
+      _isPlaying = incomingPlayingState;
     });
 
     if (_isPlaying) {
-      // [재생 시작]
-      _lpController.repeat(); // LP 즉시 회전
-      _needleController.forward(); // 바늘 즉시 내림
+      // 재생 상태로 변함 -> 바늘 내리고 LP 돌리기
+      if (!_lpController.isAnimating) {
+        _lpController.repeat(); 
+      }
+      _needleController.forward();
       HapticFeedback.lightImpact();
     } else {
-      // [정지]
-      _needleController.reverse(); // 바늘 즉시 올림
+      // 정지 상태로 변함 -> 바늘 올리고 LP 멈추기
+      _needleController.reverse();
       
-      // 🚀 [수정] 딜레이 없이 즉시 멈추거나, 
-      // 바늘이 올라가는 시간(300ms)만 살짝 기다렸다가 확실히 멈춤
-      _lpController.stop(); 
-      
+      // 바늘이 올라가는 애니메이션 시간(약 200~300ms) 동안은 LP가 돌다가 멈추는 게 자연스러움
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && !_isPlaying) {
+          _lpController.stop(); // 👈 여기서 확실히 멈춤
+        }
+      });
       HapticFeedback.mediumImpact();
     }
   }
 }
 
-@override
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // 유튜브 뮤직 등 다른 곳에서 조작하고 돌아왔을 때 즉시 상태 동기화
@@ -249,7 +268,7 @@ void _handleMediaStatusUpdate(dynamic data) {
     }
   }
 
-Future<void> _fetchInitialStatus() async {
+  Future<void> _fetchInitialStatus() async {
     try {
       const platform = MethodChannel('com.meteor.player/media_control');
       final dynamic result = await platform.invokeMethod('getCurrentStatus');
@@ -258,13 +277,21 @@ Future<void> _fetchInitialStatus() async {
         final data = Map<String, dynamic>.from(result);
         final Uint8List? artData = data['albumArt'] as Uint8List?;
 
+        if (artData == null || artData.isEmpty) {
+          // 200ms 후에 재시도 (재귀 호출 방지를 위해 딱 한 번만 실행되도록 설계하는 것이 좋음)
+          Future.delayed(
+            const Duration(milliseconds: 200),
+            () => _fetchInitialStatus(),
+          );
+        }
+
         // 1. 텍스트 정보 및 재생 상태 즉시 업데이트
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
           // 네이티브에서 넘어온 artist 정보를 대문자로 변환하여 저장
           _currentArtist = (data['artist'] ?? "METEOR PLAYER").toUpperCase();
           _isPlaying = data['isPlaying'] ?? false;
-          
+
           // 앨범 아트 데이터가 유효한 경우에만 바이트 데이터 저장
           if (artData != null && artData.isNotEmpty) {
             _albumArtBytes = artData;
@@ -335,32 +362,83 @@ Future<void> _fetchInitialStatus() async {
               children: [
                 if (_albumArtBytes != null)
                   Positioned.fill(
-                    child: AnimatedOpacity(
-                      duration: const Duration(seconds: 1),
-                      opacity: 0.2, // 배경색에 따라 0.1 ~ 0.3 사이 조절
-                      child: Image.memory(
-                        _albumArtBytes!,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true, // 이미지 교체 시 깜빡임 방지
-                        // 🚀 화질 개선 핵심 설정
-                        filterQuality: _isMinimalMode
-                            ? FilterQuality.high
-                            : FilterQuality.low,
-                        isAntiAlias: true,
-                        // LP 모드일 땐 작게 캐싱해서 메모리를 아끼고, 앨범 모드일 땐 원본 화질 유지
-                        cacheWidth: _isMinimalMode ? null : 300,
-                        cacheHeight: _isMinimalMode ? null : 300,
+                    child: RepaintBoundary(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 600),
+                        // 🚀 핵심: AnimatedSwitcher의 자식이 전체를 채우도록 설정
+                        layoutBuilder:
+                            (
+                              Widget? currentChild,
+                              List<Widget> previousChildren,
+                            ) {
+                              return Stack(
+                                children: [
+                                  ...previousChildren,
+                                  if (currentChild != null) currentChild,
+                                ],
+                              );
+                            },
+                        child: SizedBox.expand(
+                          // 🚀 이미지가 화면 전체로 늘어나도록 강제
+                          key: ValueKey(
+                            '${_currentTitle}_${_albumArtBytes.hashCode}',
+                          ),
+                          child: Image.memory(
+                            _albumArtBytes!,
+                            fit: BoxFit.cover, // 이제 이 설정이 화면 전체에 먹힙니다.
+                            gaplessPlayback: true,
+                            cacheWidth: 600, // 너무 작으면 화질이 깨지니 600 정도로 상향
+                            cacheHeight: 1200, // 세로형 폰에 맞게 조절
+                            filterQuality: FilterQuality.low,
+                            opacity: const AlwaysStoppedAnimation(
+                              0.8,
+                            ), // 0.2보다 훨씬 선명하게
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                // 배경을 흐리게 만드는 필터
+
+                // 블러 레이어 (이 부분은 동일하되, sigma 수치만 확인하세요)
+                // 배경을 흐리게 만들고 가독성을 높이는 필터 레이어
                 Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ColorFilter.mode(
-                      _bgColor.withOpacity(0.5),
-                      BlendMode.srcOver,
+                  child: RepaintBoundary(
+                    child: Stack(
+                      children: [
+                        // [1] 블러 레이어: 배경 이미지의 색감만 남깁니다.
+                        BackdropFilter(
+                          filter: ImageFilter.blur(
+                            sigmaX: 20,
+                            sigmaY: 20,
+                          ), // 🚀 블러를 살짝 높여 몽환적으로
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 600),
+                            // 배경색을 덮되, 투명도를 조절해 앨범 아트의 생동감을 살립니다.
+                            color: _bgColor.withValues(alpha: 0.4),
+                          ),
+                        ),
+
+                        // [2] 소프트 레이어 (가장 중요): 글래스모피즘의 핵심 '어둠의 계층'
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 600),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                // 상단: 상단 바 아이콘들을 위해 아주 살짝만 어둡게
+                                Colors.black.withValues(alpha: 0.2),
+                                // 중간: 앨범 아트의 색이 가장 잘 투영되는 지점
+                                Colors.black.withValues(alpha: 0.1),
+                                // 하단: 🚀 텍스트 가독성을 위해 묵직하게 블랙 그라데이션
+                                Colors.black.withValues(alpha: 0.7),
+                              ],
+                              stops: const [0.0, 0.4, 1.0],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Container(color: Colors.transparent),
                   ),
                 ),
 
@@ -390,40 +468,45 @@ Future<void> _fetchInitialStatus() async {
                         ),
 
                         // 외부 파일로 뺀 위젯 호출
-                        ClassicVinylView(
-                          isMinimalMode: _isMinimalMode,
-                          size: config.lpSize,
-                          albumArtBytes: _albumArtBytes,
-                          title: _currentTitle,
-                          artist: _currentArtist,
-                          lpController: _lpController,
-                          onToggleMode: () =>
-                              setState(() => _isMinimalMode = !_isMinimalMode),
+                        RepaintBoundary(
+                          child: ClassicVinylView(
+                            isMinimalMode: _isMinimalMode,
+                            size: config.lpSize,
+                            albumArtBytes: _albumArtBytes,
+                            title: _currentTitle,
+                            artist: _currentArtist,
+                            lpController: _lpController,
+                            onToggleMode: () => setState(
+                              () => _isMinimalMode = !_isMinimalMode,
+                            ),
+                          ),
                         ),
                       ),
 
                       // --- 바늘 (LP 모드일 때만 표시) ---
-if (!_isMinimalMode)
-  _buildEdit(
-    config.needlePos,
-    160,
-    config.needleSize * 2.0,
-    (d) => config.needlePos += d,
-    (s) => config.needleSize = (config.needleSize + s)
-        .clamp(100.0, 400.0),
-    // 🚀 렉 방지 핵심: AnimatedBuilder가 이 부분만 콕 집어서 다시 그립니다.
-    AnimatedBuilder(
-      animation: _needleController,
-      builder: (context, child) {
-        return NeedleWidget(
-          controller: _needleController, // 컨트롤러의 변화를 감지하여 부드럽게 움직임
-          needleSize: config.needleSize,
-          bgColor: _bgColor,
-          accentColor: _playBtnColor,
-        );
-      },
-    ),
-  ),
+                      if (!_isMinimalMode)
+                        _buildEdit(
+                          config.needlePos,
+                          160,
+                          config.needleSize * 2.0,
+                          (d) => config.needlePos += d,
+                          (s) => config.needleSize = (config.needleSize + s)
+                              .clamp(100.0, 400.0),
+                          // 🚀 최적화 핵심: RepaintBoundary가 바늘의 움직임을 별도 레이어로 분리합니다.
+                          RepaintBoundary(
+                            child: AnimatedBuilder(
+                              animation: _needleController,
+                              builder: (context, child) {
+                                return NeedleWidget(
+                                  controller: _needleController,
+                                  needleSize: config.needleSize,
+                                  bgColor: _bgColor,
+                                  accentColor: _playBtnColor,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
 
                       // --- 제목 (유지) ---
                       _buildEdit(
@@ -623,19 +706,19 @@ if (!_isMinimalMode)
   }
 
   // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
-// 2. 프로그레스 바 스트림 빌더
-Widget _buildProgressBarStream(double barWidth) {
-  return SizedBox(
-    key: _progressKey,
-    width: barWidth,
-    // 🚀 핵심: 복잡한 StreamBuilder 로직은 이제 StreamProgressBar 파일 안에 들어있습니다.
-    child: StreamProgressBar(
-      barWidth: barWidth,
-      bgColor: _bgColor,
-      barColor: _barColor,
-    ),
-  );
-}
+  // 2. 프로그레스 바 스트림 빌더
+  Widget _buildProgressBarStream(double barWidth) {
+    return SizedBox(
+      key: _progressKey,
+      width: barWidth,
+      // 🚀 핵심: 복잡한 StreamBuilder 로직은 이제 StreamProgressBar 파일 안에 들어있습니다.
+      child: StreamProgressBar(
+        barWidth: barWidth,
+        bgColor: _bgColor,
+        barColor: _barColor,
+      ),
+    );
+  }
 
   // --- 위젯 빌더 함수들 ---
 

@@ -8,7 +8,7 @@ class PlayerTopBar extends StatelessWidget {
   final Function(bool) onEditModeChanged;
   final VoidCallback onReset;
   final Color textColor;
-  final Widget menuButton; // 메인에서 넘겨받은 메뉴 버튼 사용
+  final Widget menuButton;
 
   const PlayerTopBar({
     super.key,
@@ -22,40 +22,76 @@ class PlayerTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            "METEOR PLAYER",
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2.0,
-              fontSize: 14,
-              color: textColor,
-            ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          // 🚀 상단바 자체에 아주 얇은 유리막 레이어를 씌웁니다.
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 1,
           ),
-          Row(
-            children: [
-              if (isEditMode)
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.redAccent),
-                  onPressed: onReset,
-                  tooltip: "Layout Reset",
-                ),
-              IconButton(
-                icon: Icon(
-                  isEditMode ? Icons.check_circle : Icons.dashboard_customize,
-                  color: isEditMode ? Colors.blue : textColor,
-                ),
-                onPressed: () => onEditModeChanged(!isEditMode),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // 브랜드 로고 부분
+            Text(
+              "METEOR PLAYER",
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+                fontSize: 13,
+                // 🚀 배경이 어두우므로 순백색을 사용하되, 살짝 투명도를 주어 세련되게
+                color: Colors.white.withValues(alpha: 0.9),
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                  ),
+                ],
               ),
-              // 메인에서 정의된 고퀄리티 PopupMenuButton
-              menuButton,
-            ],
-          ),
-        ],
+            ),
+            Row(
+              children: [
+                if (isEditMode)
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.redAccent, size: 22),
+                    onPressed: onReset,
+                  ),
+                // 편집 모드 전환 버튼
+                _buildGlassIconButton(
+                  icon: isEditMode ? Icons.check_circle : Icons.dashboard_customize,
+                  iconColor: isEditMode ? Colors.cyanAccent : Colors.white,
+                  onPressed: () => onEditModeChanged(!isEditMode),
+                ),
+                // 🚀 기존 menuButton도 이 테마에 녹아들도록 감쌉니다.
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    iconTheme: const IconThemeData(color: Colors.white),
+                  ),
+                  child: menuButton,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  // 상단바 아이콘용 글래스 스타일 헬퍼
+  Widget _buildGlassIconButton({
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      visualDensity: VisualDensity.compact,
+      icon: Icon(icon, color: iconColor.withValues(alpha: 0.9), size: 22),
+      onPressed: onPressed,
     );
   }
 }
@@ -84,27 +120,26 @@ class ProgressBarWidget extends StatefulWidget {
 
 class _ProgressBarWidgetState extends State<ProgressBarWidget> {
   double? _dragFactor;
-  bool _isSeeking = false; // 추가: 이동 중인지 확인하는 플래그
+  bool _isSeeking = false;
 
   @override
   Widget build(BuildContext context) {
-    // 이동 중(Seeking)일 때는 시스템 값(widget.factor)을 무시합니다.
-    final displayFactor = (_isSeeking && _dragFactor != null) 
-    ? _dragFactor!.clamp(0.0, 1.0) 
-    : widget.factor.clamp(0.0, 1.0);
+    // 이동 중일 때는 사용자의 손가락 위치를, 평소에는 재생 위치를 보여줍니다.
+    final displayFactor = (_isSeeking && _dragFactor != null)
+        ? _dragFactor!.clamp(0.0, 1.0)
+        : widget.factor.clamp(0.0, 1.0);
 
     return GestureDetector(
       onHorizontalDragUpdate: (details) {
         setState(() {
-          _isSeeking = true; // 시스템 업데이트 무시 시작
+          _isSeeking = true;
           _dragFactor = (details.localPosition.dx / widget.width).clamp(0.0, 1.0);
         });
         _handleSeek(_dragFactor!);
       },
       onHorizontalDragEnd: (_) async {
-        // [핵심 수정] 손을 떼고 바로 리셋하지 않고 0.5초 정도 기다립니다.
-        // 네이티브에서 "나 여기까지 이동했어!"라고 스트림을 쏠 시간을 주는 것입니다.
-        await Future.delayed(const Duration(milliseconds: 1000));
+        // 스트림 업데이트와 충돌 방지를 위한 지연 시간
+        await Future.delayed(const Duration(milliseconds: 600));
         if (mounted) {
           setState(() {
             _dragFactor = null;
@@ -119,9 +154,7 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
           _dragFactor = newFactor;
         });
         _handleSeek(newFactor);
-        
-        // 탭 시에도 지연 후 복구
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future.delayed(const Duration(milliseconds: 600));
         if (mounted) {
           setState(() {
             _dragFactor = null;
@@ -131,43 +164,69 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
       },
       child: Container(
         width: widget.width,
-        height: 30, // 터치 영역 확보
-        color: Colors.transparent,
+        height: 40, // 조작 편의를 위한 넓은 터치 영역
+        color: Colors.transparent, // 영역 시각화 방지
         child: Center(
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // 배경 바
+              // 1. [배경 바] 불투명한 유리의 느낌 (Glass Base)
               Container(
                 width: widget.width,
-                height: 4,
+                height: 6, // 요즘은 아주 얇은 것보다 살짝 두께감 있는 게 트렌드
                 decoration: BoxDecoration(
-                  color: widget.barColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              // 진행 바
+              
+              // 2. [진행 바] 쨍한 화이트 + 은은한 Glow 효과
               Container(
                 width: widget.width * displayFactor,
-                height: 4,
+                height: 6,
                 decoration: BoxDecoration(
-                  color: widget.barColor,
-                  borderRadius: BorderRadius.circular(2),
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
               ),
-              // 노브(동그라미)
+
+              // 3. [노브] 물리적 버튼이 아닌, 빛나는 포인트 느낌
               Positioned(
-                left: (widget.width * displayFactor) - 7,
-                top: -5,
-                child: Container(
-                  width: 14,
-                  height: 14,
+                left: (widget.width * displayFactor) - 9,
+                top: -6,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 18,
+                  height: 18,
                   decoration: BoxDecoration(
-                    color: widget.barColor,
+                    color: Colors.white,
                     shape: BoxShape.circle,
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
+                    boxShadow: [
+                      // 🚀 노브가 공중에 떠 있는 것처럼 보이게 하는 깊은 그림자
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
                     ],
+                  ),
+                  // 노브 안쪽에 아주 작은 점을 찍어 디테일을 살립니다 (선택 사항)
+                  child: Center(
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -179,8 +238,7 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
   }
 
   void _handleSeek(double ratio) {
-    // 진동을 가벼운 lightImpact로 주어 진동이 멈추지 않는 현상 해결
-    HapticFeedback.lightImpact();
+    HapticFeedback.lightImpact(); // 햅틱 피드백은 짧고 간결하게
     widget.onSeek(ratio);
   }
 }
@@ -216,14 +274,17 @@ class PlayButtonsWidget extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _buildSideBtn(Icons.skip_previous_rounded, onPrevious),
-          GestureDetector(onTap: onTogglePlay, child: _buildMainPlayBtn()),
+          GestureDetector(
+            onTap: onTogglePlay, 
+            child: _buildMainPlayBtn(),
+          ),
           _buildSideBtn(Icons.skip_next_rounded, onNext),
         ],
       ),
     );
   }
 
-  // 이전/다음 버튼
+  // 1. 사이드 버튼 (이전/다음): 극도로 미니멀한 투명 유리 느낌
   Widget _buildSideBtn(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -231,68 +292,61 @@ class PlayButtonsWidget extends StatelessWidget {
         width: 55,
         height: 55,
         decoration: BoxDecoration(
-          color: bgColor,
           shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              offset: const Offset(4, 4),
-              blurRadius: 10,
-            ),
-            BoxShadow(
-              color: Colors.white.withValues(alpha: 0.8),
-              offset: const Offset(-4, -4),
-              blurRadius: 10,
-            ),
-          ],
+          // 🚀 소프트 레이어: 아주 연한 화이트 오버레이
+          color: Colors.white.withValues(alpha: 0.1), 
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15), // 유리의 엣지 효과
+            width: 1.5,
+          ),
         ),
-        child: Icon(icon, size: 30, color: textColor.withValues(alpha: 0.8)),
+        child: Icon(
+          icon, 
+          size: 30, 
+          color: Colors.white.withValues(alpha: 0.9), // 메인 텍스트와 통일감
+        ),
       ),
     );
   }
 
-  // 메인 재생/정지 버튼 (네오포미즘 효과 극대화)
+  // 2. 메인 버튼 (재생/정지): 빛을 머금은 하이라이트 레이어
   Widget _buildMainPlayBtn() {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: 75,
-      height: 75,
+      duration: const Duration(milliseconds: 300),
+      width: 80, // 약간 더 키워 강조
+      height: 80,
       decoration: BoxDecoration(
-        color: bgColor,
         shape: BoxShape.circle,
-        boxShadow: isPlaying
-            ? [
-                // 눌린 효과 (Inner Shadow 모사)
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  offset: const Offset(2, 2),
-                  blurRadius: 5,
-                ),
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  offset: const Offset(-2, -2),
-                  blurRadius: 5,
-                ),
-              ]
-            : [
-                // 튀어나온 효과
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  offset: const Offset(6, 6),
-                  blurRadius: 15,
-                ),
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  offset: const Offset(-6, -6),
-                  blurRadius: 15,
-                ),
-              ],
+        // 🚀 글래스모피즘 핵심: 배경이 비치는 화이트
+        color: isPlaying 
+            ? Colors.white.withValues(alpha: 0.25) 
+            : Colors.white.withValues(alpha: 0.15),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.3),
+          width: 2,
+        ),
+        boxShadow: [
+          // 하단으로 퍼지는 부드러운 안개 그림자
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+          // 버튼 자체가 빛나는 느낌 (Glow)
+          if (isPlaying)
+            BoxShadow(
+              color: activeColor.withValues(alpha: 0.3),
+              blurRadius: 25,
+              spreadRadius: 2,
+            ),
+        ],
       ),
       child: Center(
         child: Icon(
           isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          size: 40,
-          color: isPlaying ? activeColor : textColor,
+          size: 45,
+          // 재생 중일 때는 포인트 컬러, 아니면 화이트
+          color: isPlaying ? activeColor : Colors.white,
         ),
       ),
     );

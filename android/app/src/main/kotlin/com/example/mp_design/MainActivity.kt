@@ -121,10 +121,18 @@ class MainActivity: AudioServiceActivity() {
                           ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 
                 val albumArtBytes = bitmap?.let {
-                    val scaledBitmap = Bitmap.createScaledBitmap(it, 400, 400, true)
+                    val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
                     val stream = ByteArrayOutputStream()
-                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream)
-                    stream.toByteArray()
+                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                    val bytes = stream.toByteArray()
+
+                    if (bytes.size > 800 * 1024) {
+                        val backupStream = ByteArrayOutputStream()
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 40, backupStream)
+                        backupStream.toByteArray()
+                    } else {
+                        bytes
+                    }
                 }
 
                 mutableMapOf<String, Any>(

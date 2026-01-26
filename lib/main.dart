@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 추가
 import 'package:mp_design/permission_guard.dart';
 import 'player_screen.dart';
+import 'onboarding_screen.dart'; // 추가
 
 late MyAudioHandler audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. SharedPreferences를 통해 첫 실행 여부 확인
+  final prefs = await SharedPreferences.getInstance();
+  final bool isFirstRun = prefs.getBool('isFirstRun') ?? true;
 
   audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
@@ -32,7 +38,8 @@ void main() async {
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  runApp(const MeteorPlayer());
+  // 2. 실행 시 첫 실행 여부를 전달
+  runApp(MeteorPlayer(isFirstRun: isFirstRun));
 }
 
 class MyAudioHandler extends BaseAudioHandler {
@@ -40,7 +47,6 @@ class MyAudioHandler extends BaseAudioHandler {
     'com.meteor.player/media_control',
   );
 
-  // 1. 실시간 상태를 받기 위한 EventChannel 추가
   static const EventChannel _statusChannel = EventChannel(
     'com.meteor.player/media_status',
   );
@@ -64,7 +70,6 @@ class MyAudioHandler extends BaseAudioHandler {
       ),
     );
 
-    // 2. 네이티브로부터의 상태 업데이트를 구독하여 audioHandler의 메타데이터 갱신
     _statusChannel.receiveBroadcastStream().listen((data) {
       final mediaData = Map<String, dynamic>.from(data);
       final bool isPlaying = mediaData['isPlaying'] ?? false;
@@ -73,11 +78,9 @@ class MyAudioHandler extends BaseAudioHandler {
         playing: isPlaying,
         updatePosition: Duration(milliseconds: mediaData['position'] as int),
         bufferedPosition: Duration(milliseconds: mediaData['position'] as int),
-        // 재생 중이 아닐 때는 속도를 0.0으로, 재생 중일 때는 1.0으로 설정
         speed: isPlaying ? 1.0 : 0.0,
       ));
 
-      // 현재 재생 정보를 audio_service 내부 상태로 동기화 (선택 사항이지만 권장)
       mediaItem.add(
         MediaItem(
           id: 'external_media',
@@ -109,7 +112,8 @@ class MyAudioHandler extends BaseAudioHandler {
 }
 
 class MeteorPlayer extends StatelessWidget {
-  const MeteorPlayer({super.key});
+  final bool isFirstRun; // 추가
+  const MeteorPlayer({super.key, required this.isFirstRun}); // 수정
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +121,8 @@ class MeteorPlayer extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        // 네오포키즘 베이스 컬러 (onboarding_screen과 일치)
+        scaffoldBackgroundColor: const Color(0xFFE0E5EC), 
         visualDensity: VisualDensity.adaptivePlatformDensity,
         fontFamily: 'Pretendard',
         textTheme: const TextTheme(
@@ -124,9 +130,13 @@ class MeteorPlayer extends StatelessWidget {
           bodyMedium: TextStyle(letterSpacing: -0.5),
         ),
       ),
-      home: PermissionGuard(
-        child: const VinylPlayerScreen(),
-      ),
+      // 3. 첫 실행이면 온보딩, 아니면 메인 화면(PermissionGuard)으로 연결
+      home: isFirstRun 
+          ? const OnboardingScreen() 
+          : PermissionGuard(child: const VinylPlayerScreen()),
+      routes: {
+        '/main': (context) => PermissionGuard(child: const VinylPlayerScreen()),
+      },
     );
   }
 }

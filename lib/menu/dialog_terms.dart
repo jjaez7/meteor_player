@@ -1,94 +1,142 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 
 void showTermsDialog(BuildContext context) {
   final size = MediaQuery.of(context).size;
   final bool isLandscape = size.width > size.height;
-  const Color accentColor = Color(0xFF8E7AB5);
-  const Color bgShadowColor = Color(0xFFEFEEEE);
+  const Color accentColor = Color(0xFFD1C4E9); // 소프트 퍼플 포인트
 
   showDialog(
     context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: bgShadowColor,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-      title: Column(
-        children: [
-          Icon(Icons.gavel_rounded, color: accentColor, size: 28),
-          const SizedBox(height: 10),
-          const Text(
-            "TERMS & CONDITIONS",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              color: Color(0xFF2D2D2D),
-            ),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: isLandscape ? size.width * 0.6 : size.width * 0.9,
-        height: size.height * 0.55,
-        child: Column(
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: bgShadowColor,
-                  borderRadius: BorderRadius.circular(20),
-                  // [수정] 오목한 느낌(Inset)의 그림자 효과로 텍스트 집중도 향상
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      offset: const Offset(3, 3),
-                      blurRadius: 5,
-                    ),
-                    const BoxShadow(
-                      color: Colors.white,
-                      offset: Offset(-3, -3),
-                      blurRadius: 5,
-                    ),
-                  ],
-                ),
-                child: const SingleChildScrollView(
-                  physics: BouncingScrollPhysics(),
-                  child: Column(
+    barrierDismissible: false, // 출시용: 동의 전까지 닫기 방지
+    builder: (context) => BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+      child: AlertDialog(
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+        ),
+        contentPadding: EdgeInsets.all(isLandscape ? 16 : 24),
+        content: SizedBox(
+          width: isLandscape ? size.width * 0.85 : size.width * 0.9,
+          child: SingleChildScrollView(
+            child: isLandscape
+                ? Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _TermsSection(
-                        title: "1. Acceptance of Terms",
-                        content:
-                            "By accessing METEOR PLAYER, you agree to comply with these terms. This application is a personal project intended for media playback only.",
+                      // 좌측 영역: 로고 및 동의 버튼
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildHeaderIcon(),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "TERMS OF\nSERVICE",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 1.5,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildAgreeButton(context, accentColor),
+                          ],
+                        ),
                       ),
-                      _TermsSection(
-                        title: "2. Personal Information & Privacy",
-                        content:
-                            "We do not collect any personal data. METEOR PLAYER operates offline for local file playback. All settings and playlists are stored exclusively on your device's local storage.",
-                      ),
-                      _TermsSection(
-                        title: "3. Media Content & Copyright",
-                        content:
-                            "METEOR PLAYER does not provide any music content. All audio files played are the responsibility of the user. You must own the rights to the files you play.",
-                      ),
-                      _TermsSection(
-                        title: "4. Storage Access",
-                        content:
-                            "To provide music playback services, this app requires access to your device's storage. This permission is used solely to read and play your local audio files.",
-                      ),
-                      _TermsSection(
-                        title: "5. Disclaimer of Liability",
-                        content:
-                            "Redhook Project is not responsible for any copyright infringement by users or damages resulting from the use of the app. It is provided 'as-is' without warranties.",
+                      const SizedBox(width: 24),
+                      // 우측 영역: 약관 본문
+                      Expanded(
+                        flex: 3,
+                        child: _buildTermsScrollArea(size, isLandscape),
                       ),
                     ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildHeaderIcon(),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "TERMS OF SERVICE",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTermsScrollArea(size, isLandscape),
+                      const SizedBox(height: 30),
+                      _buildAgreeButton(context, accentColor),
+                    ],
                   ),
-                ),
-              ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// 상단 보안 아이콘 헤더
+Widget _buildHeaderIcon() {
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.1),
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+    ),
+    child: const Icon(Icons.security_rounded, color: Colors.white, size: 28),
+  );
+}
+
+// 출시용 약관 본문 스크롤 영역
+Widget _buildTermsScrollArea(Size size, bool isLandscape) {
+  return ConstrainedBox(
+    constraints: BoxConstraints(
+      maxHeight: isLandscape ? size.height * 0.6 : size.height * 0.45,
+    ),
+    child: Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        // [소프트 레이어] 가독성을 위해 배경을 조금 더 어둡게 누름
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: const SingleChildScrollView(
+        physics: BouncingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _TermsSection(
+              title: "1. Service Overview",
+              content: "METEOR PLAYER is a local media player tool. It does not provide, host, or distribute any digital content. Users are solely responsible for the media files on their device.",
             ),
-            const SizedBox(height: 25),
-            _buildCloseButton(context, accentColor),
+            _TermsSection(
+              title: "2. Data Privacy (No Collection)",
+              content: "We do not collect, store, or transmit any personal data, media metadata, or usage statistics to external servers. All processing occurs strictly on your local device.",
+            ),
+            _TermsSection(
+              title: "3. Media Access Permissions",
+              content: "This app requires access to your device's media library to function. These permissions are used exclusively to index and play your audio files within the interface.",
+            ),
+            _TermsSection(
+              title: "4. User Responsibility",
+              content: "Users must comply with local and international copyright laws. Unauthorized playback of copyrighted material is strictly prohibited and is the user's sole legal responsibility.",
+            ),
+            _TermsSection(
+              title: "5. Limitation of Liability",
+              content: "METEOR PLAYER is provided 'AS IS'. The developers (Redhook Project) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
+            ),
           ],
         ),
       ),
@@ -103,54 +151,38 @@ class _TermsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 타이틀 부분
           Row(
             children: [
               Container(
                 width: 4,
                 height: 14,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8E7AB5),
+                  color: const Color(0xFFD1C4E9),
                   borderRadius: BorderRadius.circular(2),
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFFD1C4E9).withValues(alpha: 0.5), blurRadius: 6),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              // [해결] 타이틀도 길어질 수 있으므로 Expanded 처리
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                    color: Color(0xFF2D2D2D),
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          // 내용 부분
           Padding(
-            padding: const EdgeInsets.only(left: 12), // 인디케이터 바 너비만큼 들여쓰기
-            child: Row(
-              children: [
-                // [핵심 해결] Expanded로 감싸서 19px 오버플로우 방지
-                Expanded(
-                  child: Text(
-                    content,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.black54,
-                      height: 1.6,
-                    ),
-                    softWrap: true, // 자동 줄바꿈 활성화
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.only(left: 14),
+            child: Text(
+              content,
+              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.75), height: 1.6),
             ),
           ),
         ],
@@ -159,36 +191,29 @@ class _TermsSection extends StatelessWidget {
   }
 }
 
-Widget _buildCloseButton(BuildContext context, Color accent) {
+// 빛나는 글래스 스타일의 동의 버튼
+Widget _buildAgreeButton(BuildContext context, Color accent) {
   return GestureDetector(
     onTap: () => Navigator.pop(context),
     child: Container(
       width: double.infinity,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFEEEE),
+        gradient: LinearGradient(
+          colors: [accent.withValues(alpha: 0.4), accent.withValues(alpha: 0.1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            offset: const Offset(4, 4),
-            blurRadius: 10,
-          ),
-          const BoxShadow(
-            color: Colors.white,
-            offset: Offset(-4, -4),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 5)),
         ],
       ),
-      child: Text(
-        "I AGREE",
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          letterSpacing: 2,
-          color: accent,
-        ),
+      child: const Text(
+        "I AGREE & START",
+        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Colors.white),
       ),
     ),
   );

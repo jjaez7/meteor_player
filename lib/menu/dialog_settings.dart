@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
@@ -10,7 +11,7 @@ void showSettingsDialog({
   required Color barColor,
   required Color playBtnColor,
   required Function(Color, String) onColorChanged,
-  required VoidCallback onResetColors, // 이름 변경: onReset -> onResetColors
+  required VoidCallback onResetColors,
 }) {
   showGeneralDialog(
     context: context,
@@ -23,109 +24,75 @@ void showSettingsDialog({
         scale: Curves.easeOutBack.transform(anim1.value),
         child: Opacity(
           opacity: anim1.value,
-          child: AlertDialog(
-            backgroundColor: bgColor,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30),
-            ),
-            title: Text(
-              "THEME SETTINGS",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-                color: textColor,
-                letterSpacing: 1.5,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: AlertDialog(
+              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
               ),
-            ),
-            content: SizedBox(
-              width: MediaQuery.of(context).size.width * 0.9,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 15,
-                    runSpacing: 20,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      _neoColorCircle(
-                        context,
-                        "BG",
-                        bgColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "bg"),
+              title: const Text(
+                "THEME SETTINGS",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  color: Colors.white,
+                  letterSpacing: 2.0,
+                ),
+              ),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.9,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 10),
+                    // [소프트 레이어] 컬러 칩들이 담긴 반투명 박스
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(25),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
                       ),
-                      _neoColorCircle(
-                        context,
-                        "LP",
-                        lpColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "lp"),
+                      child: Wrap(
+                        spacing: 20,
+                        runSpacing: 25,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          _glassColorCircle(context, "BG", bgColor, (c) => onColorChanged(c, "bg")),
+                          _glassColorCircle(context, "LP", lpColor, (c) => onColorChanged(c, "lp")),
+                          _glassColorCircle(context, "TEXT", textColor, (c) => onColorChanged(c, "text")),
+                          _glassColorCircle(context, "SUB", artistColor, (c) => onColorChanged(c, "artist")),
+                          _glassColorCircle(context, "BAR", barColor, (c) => onColorChanged(c, "bar")),
+                          _glassColorCircle(context, "BTN", playBtnColor, (c) => onColorChanged(c, "btn")),
+                        ],
                       ),
-                      _neoColorCircle(
-                        context,
-                        "TEXT",
-                        textColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "text"),
-                      ),
-                      _neoColorCircle(
-                        context,
-                        "SUB",
-                        artistColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "artist"),
-                      ),
-                      _neoColorCircle(
-                        context,
-                        "BAR",
-                        barColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "bar"),
-                      ),
-                      _neoColorCircle(
-                        context,
-                        "BTN",
-                        playBtnColor,
-                        bgColor,
-                        textColor,
-                        (c) => onColorChanged(c, "btn"),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 40),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildActionButton(
-                          "RESET COLOR",
-                          bgColor,
-                          Colors.redAccent,
-                          () {
-                            onResetColors();
-                            Navigator.pop(context);
-                          },
+                    ),
+                    const SizedBox(height: 35),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _glassActionButton(
+                            "RESET",
+                            Colors.redAccent.withValues(alpha: 0.8),
+                            onResetColors,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 15),
-                      Expanded(
-                        child: _buildActionButton(
-                          "DONE",
-                          bgColor,
-                          textColor,
-                          () => Navigator.pop(context),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: _glassActionButton(
+                            "DONE",
+                            Colors.white.withValues(alpha: 0.2),
+                            () => Navigator.pop(context),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -135,110 +102,104 @@ void showSettingsDialog({
   );
 }
 
-// --- 누락되었던 헬퍼 위젯들 ---
+// --- 글래스 전용 헬퍼 위젯 ---
 
-Widget _neoColorCircle(
+Widget _glassColorCircle(
   BuildContext context,
   String label,
   Color color,
-  Color bgColor,
-  Color textColor,
   Function(Color) onSelect,
 ) {
   return Column(
     children: [
       GestureDetector(
         onTap: () {
+          // 컬러 피커도 글래스모피즘 스타일로 띄움
           showDialog(
             context: context,
-            builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-              title: const Text(
-                "PICK A COLOR",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              content: SingleChildScrollView(
-                child: ColorPicker(
-                  pickerColor: color,
-                  onColorChanged: onSelect,
-                  pickerAreaHeightPercent: 0.7,
-                  enableAlpha: false,
+            builder: (context) => BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: AlertDialog(
+                backgroundColor: Colors.black.withValues(alpha: 0.8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                title: Text("PICK $label COLOR", 
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                content: SingleChildScrollView(
+                  child: ColorPicker(
+                    pickerColor: color,
+                    onColorChanged: onSelect,
+                    pickerAreaHeightPercent: 0.7,
+                    enableAlpha: false,
+                    displayThumbColor: true,
+                  ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("DONE", style: TextStyle(color: Colors.white)),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("DONE"),
-                ),
-              ],
             ),
           );
         },
         child: Container(
-          width: 50,
-          height: 50,
+          width: 55,
+          height: 55,
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(color: bgColor, width: 3),
+            border: Border.all(color: Colors.white, width: 2),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                offset: const Offset(3, 3),
-                blurRadius: 5,
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 12,
+                spreadRadius: 2,
               ),
             ],
           ),
         ),
       ),
-      const SizedBox(height: 8),
+      const SizedBox(height: 10),
       Text(
         label,
         style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: textColor.withValues(alpha: 0.6),
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: Colors.white.withValues(alpha: 0.7),
+          letterSpacing: 1.0,
         ),
       ),
     ],
   );
 }
 
-Widget _buildActionButton(
-  String label,
-  Color bgColor,
-  Color color,
-  VoidCallback onTap,
-) {
+Widget _glassActionButton(String label, Color color, VoidCallback onTap) {
   return GestureDetector(
     onTap: onTap,
     child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(15),
+        color: color,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            offset: const Offset(4, 4),
-            blurRadius: 8,
-          ),
-          const BoxShadow(
-            color: Colors.white,
-            offset: Offset(-4, -4),
-            blurRadius: 8,
-          ),
+          if (label == "RESET")
+            BoxShadow(
+              color: Colors.redAccent.withValues(alpha: 0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
         ],
       ),
       child: Text(
         label,
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.w900,
-          color: color,
-          fontSize: 12,
+          color: Colors.white,
+          letterSpacing: 1.5,
+          fontSize: 13,
         ),
       ),
     ),

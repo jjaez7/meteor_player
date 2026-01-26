@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
-/// --- [1] 고급스러운 LP판 위젯 ---
+/// --- [1] 글래스모피즘 LP판 위젯 (최적화 버전) ---
 class VinylDisk extends StatelessWidget {
   final AnimationController controller;
   final double size;
@@ -18,25 +18,21 @@ class VinylDisk extends StatelessWidget {
     this.title = "",
     this.artist = "",
   });
+  
 
-@override
+  @override
   Widget build(BuildContext context) {
     final Widget albumArt = ClipOval(
       child: albumArtBytes != null
           ? Image.memory(
               albumArtBytes!,
               fit: BoxFit.cover,
-              filterQuality: FilterQuality.medium,
-              isAntiAlias: false,
+              filterQuality: FilterQuality.low, // 👈 성능을 위해 회전 중에는 low/medium 추천
               gaplessPlayback: true,
             )
           : Container(
-              color: Colors.grey[800],
-              child: const Icon(
-                Icons.music_note,
-                color: Colors.white24,
-                size: 50,
-              ),
+              color: const Color(0xFF2D2D44),
+              child: const Icon(Icons.music_note, color: Colors.white10, size: 50),
             ),
     );
 
@@ -44,39 +40,43 @@ class VinylDisk extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 1. 회전하는 레이어
+          // 1. 회전하는 베이스 (Gradient 위주)
           RotationTransition(
             turns: controller,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // LP 본체
+                // 디스크 본체: 블러 대신 깊이감 있는 그라데이션
                 Container(
                   width: size,
                   height: size,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
-                      colors: [Color(0xFF2C2C2C), Color(0xFF000000)],
-                      stops: [0.4, 1.0],
+                      colors: [
+                        const Color(0xFF35354A).withOpacity(0.4),
+                        const Color(0xFF0A0A0F).withOpacity(0.9),
+                      ],
+                      stops: const [0.2, 1.0],
                     ),
-                  ),
-                ),
-                
-                // LP판 동심원 홈
-                Opacity(
-                  opacity: 0.1,
-                  child: Container(
-                    width: size * 0.9,
-                    height: size * 0.9,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 0.5),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.08),
+                      width: 1.5,
                     ),
                   ),
                 ),
 
-                // 중앙 라벨 각인 (데이터 갱신을 위해 RepaintBoundary 제거)
+                // 동심원 홈 (Opacity 조절로 소프트 레이어 구현)
+                ...List.generate(3, (index) => Container(
+                  width: size * (0.95 - (index * 0.2)),
+                  height: size * (0.95 - (index * 0.2)),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.05), width: 0.5),
+                  ),
+                )),
+
+                // 중앙 라벨 (텍스트)
                 IgnorePointer(
                   child: SizedBox(
                     width: size * 0.45,
@@ -85,31 +85,31 @@ class VinylDisk extends StatelessWidget {
                       painter: CircularTextPainter(
                         text: "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          fontSize: size * 0.025,
+                          color: Colors.white.withOpacity(0.2),
+                          fontSize: size * 0.024,
                           fontWeight: FontWeight.w600,
-                          letterSpacing: 3,
+                          letterSpacing: 2.5,
                         ),
                       ),
                     ),
                   ),
                 ),
 
-                // 중앙 앨범 아트 (이미지 교체를 위해 RepaintBoundary 제거)
+                // 앨범 아트
                 Container(
                   width: size * 0.38,
                   height: size * 0.38,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0xFF121212),
+                    border: Border.all(color: Colors.white.withOpacity(0.15), width: 2),
                   ),
-                  child: albumArt, 
+                  child: albumArt,
                 ),
               ],
             ),
           ),
 
-          // 2. 고정 레이어: 반사광
+          // 2. 고정 반사광 (회전 연산 제외 - 성능 이점)
           IgnorePointer(
             child: Container(
               width: size,
@@ -117,27 +117,29 @@ class VinylDisk extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: SweepGradient(
-                  center: Alignment.center,
                   colors: [
-                    Colors.white.withValues(alpha: 0.0),
-                    Colors.white.withValues(alpha: 0.12),
-                    Colors.white.withValues(alpha: 0.0),
-                    Colors.white.withValues(alpha: 0.12),
-                    Colors.white.withValues(alpha: 0.0),
+                    Colors.transparent,
+                    Colors.white.withOpacity(0.05),
+                    Colors.transparent,
+                    Colors.white.withOpacity(0.1),
+                    Colors.transparent,
                   ],
                   stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
                 ),
               ),
             ),
           ),
-
-          // 3. 중앙 스핀들
+          
+          // 3. 중앙 핀
           Container(
-            width: 6,
-            height: 6,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE0E0E0),
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: Colors.white,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: const Color(0xFFD1C4E9).withOpacity(0.5), blurRadius: 8),
+              ],
             ),
           ),
         ],
@@ -146,7 +148,7 @@ class VinylDisk extends StatelessWidget {
   }
 }
 
-/// --- [2] 정교한 턴테이블 바늘 위젯 ---
+/// --- [2] 턴테이블 바늘 (블러 제거 최적화 버전) ---
 class VinylNeedle extends StatelessWidget {
   final AnimationController controller;
   final double height;
@@ -159,7 +161,7 @@ class VinylNeedle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary( // 👈 바늘 전체를 캐싱하여 GPU 연산 최적화
+    return RepaintBoundary(
       child: AnimatedBuilder(
         animation: controller,
         builder: (context, child) {
@@ -169,44 +171,35 @@ class VinylNeedle extends StatelessWidget {
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
             children: [
-              // 1. 바늘 회전축 (Shadow 연산이 많으므로 고정 위젯으로 분리하는 것이 좋음)
-              const _NeedlePivot(),
-
-              // 2. 바늘 암(Arm) & 헤드쉘
+              const _GlassNeedlePivot(),
               Transform(
                 alignment: Alignment.topCenter,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateZ(rotationAngle)
-                  ..rotateX(controller.value * 0.15),
+                transform: Matrix4.identity()..rotateZ(rotationAngle),
                 child: SizedBox(
                   height: height,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // 바늘 암 (반투명 라인)
                       Container(
-                        width: 5,
-                        height: height * 0.7,
+                        width: 4,
+                        height: height * 0.75,
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.grey[400]!, Colors.grey[300]!],
-                          ),
+                          color: Colors.white.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
+                      // 헤드쉘 (블러 대신 반투명 컬러 레이어링)
                       Container(
-                        width: 18,
-                        height: 30,
+                        width: 20,
+                        height: 35,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF222222),
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              offset: const Offset(5, 10),
-                              blurRadius: 10,
-                            ),
-                          ],
+                          color: const Color(0xFF3A3A4A).withOpacity(0.8), // 👈 고정색으로 처리
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white.withOpacity(0.2)),
+                        ),
+                        child: Center(
+                          child: Container(width: 2, height: 12, color: Colors.white24),
                         ),
                       ),
                     ],
@@ -221,29 +214,34 @@ class VinylNeedle extends StatelessWidget {
   }
 }
 
-// 바늘 회전축 분리 (리빌드 시 영향 최소화)
-class _NeedlePivot extends StatelessWidget {
-  const _NeedlePivot();
+class _GlassNeedlePivot extends StatelessWidget {
+  const _GlassNeedlePivot();
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 36,
-      height: 36,
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
-        color: const Color(0xFFEFEEEE),
+        color: Colors.white.withValues(alpha: 0.05),
         shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            offset: const Offset(4, 4),
-            blurRadius: 8,
-          ),
-          const BoxShadow(
-            color: Colors.white,
-            offset: Offset(-4, -4),
-            blurRadius: 8,
+            color: const Color(0xFFD1C4E9).withValues(alpha: 0.1),
+            blurRadius: 20,
+            spreadRadius: 2,
           ),
         ],
+      ),
+      child: Center(
+        child: Container(
+          width: 14,
+          height: 14,
+          decoration: const BoxDecoration(
+            color: Colors.white12,
+            shape: BoxShape.circle,
+          ),
+        ),
       ),
     );
   }
