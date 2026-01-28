@@ -68,6 +68,8 @@ Widget _buildVinylDisk() {
 
   // --- 2. 미니멀 모드 빌더 (고화질 최적화) ---
   Widget _buildMinimalArt() {
+    final double responsiveRadius = size * 0.12;
+    
     return GestureDetector(
       key: const ValueKey('minimal_art'),
       onDoubleTap: () {
@@ -78,7 +80,7 @@ Widget _buildVinylDisk() {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(25),
+          borderRadius: BorderRadius.circular(responsiveRadius),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.2),
@@ -88,20 +90,20 @@ Widget _buildVinylDisk() {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(25),
+          borderRadius: BorderRadius.circular(responsiveRadius),
           child: albumArtBytes != null
               ? Image.memory(
                   albumArtBytes!,
                   fit: BoxFit.cover,
                   // 🚀 [화질 개선 핵심]
                   // 1. FilterQuality를 high로 설정하여 업스케일링 시 깨짐 방지
-                  filterQuality: FilterQuality.high, 
+                  filterQuality: FilterQuality.medium, 
                   // 2. 캐시 사이즈를 null로 두어 원본 해상도 그대로 사용
-                  cacheWidth: null, 
-                  cacheHeight: null,
+                cacheWidth: (size * 2).toInt(), 
+                cacheHeight: (size * 2).toInt(),
                   // 3. 이미지 전환 시 부드럽게 유지
                   gaplessPlayback: true,
-                  isAntiAlias: true,
+                  isAntiAlias: false,
                 )
               : Container(
                   color: Colors.grey[300],

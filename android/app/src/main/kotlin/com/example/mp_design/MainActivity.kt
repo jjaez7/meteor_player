@@ -17,14 +17,25 @@ import android.view.KeyEvent
 import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import com.ryanheise.audioservice.AudioServiceActivity
+import android.content.res.Configuration // 🚀 추가: Configuration 임포트
 
 class MainActivity: AudioServiceActivity() {
     private val METHOD_CHANNEL = "com.meteor.player/media_control"
     private val EVENT_CHANNEL = "com.meteor.player/media_status"
+    private val PIP_CHANNEL = "com.meteor.player/pip_status" // 🚀 추가: PIP_CHANNEL 변수 정의
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var lastTitle: String? = null
     
     private var activeController: MediaController? = null
+    private var pipMethodChannel: MethodChannel? = null
+
+    // 🚀 PiP 변경 감지 오버라이드
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration?) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // Flutter로 PiP 진입/이탈 여부를 즉시 전송
+        pipMethodChannel?.invokeMethod("onPipModeChanged", isInPictureInPictureMode)
+    }
 
     private val mediaCallback = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -36,8 +47,10 @@ class MainActivity: AudioServiceActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        GeneratedPluginRegistrant.registerWith(flutterEngine)
         super.configureFlutterEngine(flutterEngine)
+
+        // 🚀 PiP 채널 초기화
+        pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -76,6 +89,20 @@ class MainActivity: AudioServiceActivity() {
                         result.error("NO_SESSION", "No active media session found", null)
                     }
                 }
+
+                "enterPip" -> {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        val aspectRatio = android.util.Rational(23, 10) 
+        
+                        val params = android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(aspectRatio)
+                        .build()
+                        enterPictureInPictureMode(params)
+                        result.success(true)
+                    } else {
+                        result.error("VERSION_LOW", "PiP requires Android Oreo or higher", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -102,7 +129,9 @@ class MainActivity: AudioServiceActivity() {
 
     private fun getMediaStatus(): Map<String, Any>? {
         return try {
-            val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val mediaSessionManager = getSystemService(Context.AUDIO_SERVICE).let { 
+                getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager 
+            }
             val componentName = ComponentName(this, "com.notification_listener_service.NotificationListenerServiceImpl")
             val controllers = mediaSessionManager.getActiveSessions(componentName)
 

@@ -1,66 +1,83 @@
-// lib/utils/layout_engine.dart
-
 import 'package:flutter/material.dart';
 import '../models/player_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
 class LayoutEngine {
-  static PlayerConfig calculate(Size size, Orientation orientation) {
+  static PlayerConfig calculate(Size size, Orientation orientation, bool isPip) {
     final isLandscape = orientation == Orientation.landscape;
+    
+    // 반응형 단위 계산
+    double responsiveUnit = size.shortestSide;
 
-    if (isLandscape) {
-      // --- 가로 모드: 왼쪽(LP) + 오른쪽(정보 및 제어) 분리형 레이아웃 ---
-      // 가로 모드는 높이가 낮으므로 세로 높이 기준으로 크기를 결정합니다.
+if (isPip) {
+  // 1. 비율 설정 (2.3:1)
+  final double cardWidth = size.width;
+  final double cardHeight = size.width / 2.3; 
+
+  // 2. 앨범 사이즈 (높이의 80% 정도)
+  double albumSize = cardHeight * 0.8; 
+
+  return PlayerConfig(
+    lpSize: albumSize,
+    needleSize: 0,
+    titleSize: 15, // 글씨 조금 키움
+    artistSize: 12,
+    progressBarWidth: 0,
+    playButtonsWidth: 0,
+
+    // 🚀 앨범 아트: 왼쪽 배치 (x: 20%, y: 중앙)
+    lpPos: Offset(cardWidth * 0.22, cardHeight * 0.5),
+    
+    // 🚀 제목/가수 위치 (수정): 
+    // 만약 Positioned로 그리신다면 이 좌표들이 카드 높이(cardHeight)를 
+    // 벗어나지 않도록 0.35, 0.6 정도로 타이트하게 잡아야 합니다.
+    titlePos: Offset(cardWidth * 0.7, cardHeight * 0.4), 
+    artistPos: Offset(cardWidth * 0.7, cardHeight * 0.62),
+
+    // 나머지는 화면 밖으로
+    needlePos: const Offset(-500, -500),
+    progressBarPos: const Offset(-500, -500),
+    playButtonsPos: const Offset(-500, -500),
+  );
+    
+    
+    } else if (isLandscape) {
+      // --- [가로 모드] 기존 디자인 유지 ---
       double lpSize = size.height * 0.75; 
       double progressBarWidth = size.width * 0.35; 
 
       return PlayerConfig(
         lpSize: lpSize,
-        // 바늘이 LP판 중심까지 충분히 닿을 수 있는 길이
         needleSize: size.height * 0.35, 
-        titleSize: 28,
-        artistSize: 14,
-        progressBarWidth: progressBarWidth, // 오른쪽 영역 너비의 대부분 차지
-        playButtonsWidth: 240,
+        titleSize: responsiveUnit * 0.06,
+        artistSize: responsiveUnit * 0.03,
+        progressBarWidth: progressBarWidth,
+        playButtonsWidth: size.width * 0.3,
 
-        // 1. LP 위치: 왼쪽 영역(30%) 중앙에 배치
         lpPos: Offset(size.width * 0.24, size.height * 0.54),
-
-        // 2. 바늘 위치: LP판의 오른쪽 상단 지점에 조인트 배치
-        // LP 중심축 기준으로 자연스럽게 내려오도록 조정
         needlePos: Offset(size.width * 0.30, size.height * 0.23),
-
-        // 3. 텍스트 위치: 오른쪽 영역 상단
         titlePos: Offset(size.width * 0.7, size.height * 0.25),
-        artistPos: Offset(size.width * 0.7, size.height * 0.25 + 38),
-
-        // 4. 프로그레스 바: 오른쪽 영역 중앙
+        artistPos: Offset(size.width * 0.7, size.height * 0.25 + (size.height * 0.08)),
         progressBarPos: Offset(size.width * 0.7, size.height * 0.55),
-
-        // 5. 재생 버튼: 오른쪽 영역 하단
         playButtonsPos: Offset(size.width * 0.7, size.height * 0.8),
       );
     } else {
-      // --- 세로 모드: 고퀄리티 바늘 디자인 대응 버전 ---
+      // --- [세로 모드] 기존 감성 우측 배치 유지 ---
       double lpSize = size.width * 0.82; 
 
       return PlayerConfig(
         lpSize: lpSize,
         needleSize: size.height * 0.22,
-        titleSize: 42,
-        artistSize: 15,
+        titleSize: responsiveUnit * 0.1,
+        artistSize: responsiveUnit * 0.04,
         progressBarWidth: size.width * 0.92,
         playButtonsWidth: size.width * 0.7,
 
-        // LP 위치: 살짝 오른쪽 아래로 내려서 안정감 부여
         lpPos: Offset(size.width * 0.8, size.height * 0.35),
-
-        // 바늘 회전축 위치: 새로운 디자인의 '회전축 조인트'가 LP판 오른쪽 위에 오도록 조정
         needlePos: Offset(size.width * 0.88, size.height * 0.23),
-
         titlePos: Offset(size.width * 0.42, size.height * 0.65),
-        artistPos: Offset(size.width * 0.42, size.height * 0.65 + 45),
+        artistPos: Offset(size.width * 0.42, size.height * 0.65 + (size.height * 0.06)),
         progressBarPos: Offset(size.width * 0.5, size.height * 0.78),
         playButtonsPos: Offset(size.width * 0.5, size.height * 0.88),
       );
@@ -70,7 +87,6 @@ class LayoutEngine {
   /// 저장된 커스텀 레이아웃 데이터 초기화
   static Future<void> clearSavedLayout() async {
     final prefs = await SharedPreferences.getInstance();
-    // SharedPreferences에 저장할 때 사용한 키값('layout_config')과 동일해야 합니다.
     await prefs.remove('layout_config');
     debugPrint("레이아웃 저장 데이터 삭제 완료");
   }

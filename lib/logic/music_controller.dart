@@ -43,16 +43,55 @@ class MusicColorLogic {
   }
 
   // 음악 앱인지 확인하는 필터
-  static bool isMusicApp(String packageName) {
-    final pkgs = [
-      'com.google.android.apps.youtube.music',
-      'com.spotify.music',
-      'com.melon.android',
-      'com.kt.music.genie',
-      'com.nhn.android.music',
-      'com.apple.android.music',
-    ];
-    String p = packageName.toLowerCase();
-    return pkgs.contains(p) || p.contains("music") || p.contains("player");
-  }
+static bool isMusicApp(String packageName) {
+  if (packageName.isEmpty) return false;
+  
+  final String p = packageName.toLowerCase();
+
+  // 1. 확실한 메이저 앱 리스트 (기존 유지 및 보강)
+  final knownMusicPkgs = {
+    'com.google.android.apps.youtube.music',
+    'com.spotify.music', // 스포티파이 패키지명 수정
+    'com.melon.android',
+    'com.kt.music.genie',
+    'com.nhn.android.music', // VIBE
+    'com.apple.android.music',
+    'com.flo.music', // FLO 추가
+    'com.kakao.music',
+    'com.bugs.android.music', // 벅스 추가
+  };
+
+  if (knownMusicPkgs.contains(p)) return true;
+
+  // 2. 패키지명 내 핵심 키워드 검사
+  // 대부분의 플레이어는 패키지명에 아래 단어 중 하나를 포함합니다.
+  final musicKeywords = [
+    'music',
+    'player',
+    'audio',
+    'sound',
+    'media',
+    'radio',
+    'stream',
+    'vinyl',
+    'mp3',
+    'melon',
+    'genie',
+    'spotify',
+  ];
+
+  // 3. 예외 처리 (음악 키워드는 있지만 음악 앱이 아닌 것들)
+  // 시스템 알림이나 설정 등이 걸리는 것을 방지합니다.
+  final exclusionList = [
+    'android.system',
+    'com.android.settings',
+    'com.android.systemui',
+    'com.google.android.googlequicksearchbox', // 구글 검색/어시스턴트
+  ];
+
+  if (exclusionList.any((excluded) => p.contains(excluded))) return false;
+
+  // 4. 최종 키워드 매칭 여부 반환
+  return musicKeywords.any((keyword) => p.contains(keyword));
+}
 }

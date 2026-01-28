@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
 
 class PermissionGuard extends StatefulWidget {
@@ -14,6 +15,11 @@ class PermissionGuard extends StatefulWidget {
 class _PermissionGuardState extends State<PermissionGuard>
     with WidgetsBindingObserver {
   bool _isPermissionGranted = true;
+  bool _hasShowBootAlarm = false; // 부팅 알림 중복 방지
+  int _stableFrameCount = 0; // 연속 안정 프레임 카운트
+
+  DateTime? _lastLagTime;
+  final int _lagThresholdMs = 300;
 
   // 테마 컬러
   final Color _accentColor = const Color(0xFFD1C4E9); // 소프트 퍼플
@@ -24,6 +30,55 @@ class _PermissionGuardState extends State<PermissionGuard>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkPermission(isInitial: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startLagDetection());
+  }
+
+  // 🚀 프레임 드랍 감지 로직
+  void _startLagDetection() {
+    // 앱 시작 후 5초 동안은 시스템 초기화로 인해 프레임이 튈 수 있으므로 대기
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        SchedulerBinding.instance.addPostFrameCallback(_onFrame);
+      }
+    });
+  }
+
+  void _onFrame(Duration timestamp) {
+    if (!mounted) return;
+
+    SchedulerBinding.instance.addPostFrameCallback((Duration nextTimestamp) {
+      final double frameTime =
+          (nextTimestamp.inMicroseconds - timestamp.inMicroseconds) / 1000;
+
+      // 1. 부팅 알림 로직 (안정화 확인)
+      if (!_hasShowBootAlarm && _isPermissionGranted) {
+        if (frameTime < 33.0) {
+          // 약 30fps 이상의 안정적인 상태
+          _stableFrameCount++;
+        } else {
+          _stableFrameCount = 0; // 프레임이 튀면 다시 카운트
+        }
+
+        // 연속으로 10프레임 이상 안정적이면 "진짜 준비됨"으로 판단
+        if (_stableFrameCount > 10) {
+          _hasShowBootAlarm = true;
+          _showTopStatusAlarm(); // 부팅 알림 호출
+        }
+      }
+
+      // 2. 기존 렉 감지 로직
+      if (frameTime > _lagThresholdMs) {
+        final now = DateTime.now();
+        if (_lastLagTime == null ||
+            now.difference(_lastLagTime!) > const Duration(seconds: 10)) {
+          _lastLagTime = now;
+          _showTopStatusAlarm(isLag: true, ms: frameTime.toInt());
+        }
+      }
+
+      if (mounted) _onFrame(nextTimestamp);
+    });
   }
 
   @override
@@ -45,18 +100,20 @@ class _PermissionGuardState extends State<PermissionGuard>
           await NotificationListenerService.isPermissionGranted();
       if (_isPermissionGranted != status) {
         setState(() => _isPermissionGranted = status);
-        if (status) _showTopStatusAlarm();
-      } else if (isInitial && status) {
-        // 앱 시작 시 권한이 이미 있다면 1초 뒤 표시
-        Future.delayed(const Duration(seconds: 1), () => _showTopStatusAlarm());
+        // 권한이 나중에 승인되었을 때도 안정화 로직이 돌아가도록 플래그만 초기화
+        if (status) {
+          _stableFrameCount = 0;
+        }
       }
+      // 🚩 여기서 기존의 Future.delayed(1초 뒤 알림) 부분은 지워주세요!
+      // 이제 _onFrame에서 프레임을 감시하다가 띄워줄 겁니다.
     } catch (e) {
       debugPrint("Access Sync Error: $e");
     }
   }
 
   // ✨ 상단에서 내려오는 커스텀 글래스 알림 호출
-  void _showTopStatusAlarm() {
+  void _showTopStatusAlarm({bool isLag = false, int ms = 0}) {
     if (!mounted) return;
 
     final overlay = Overlay.of(context);
@@ -64,7 +121,9 @@ class _PermissionGuardState extends State<PermissionGuard>
 
     overlayEntry = OverlayEntry(
       builder: (context) => _TopAlarmWidget(
-        accentColor: _accentColor,
+        accentColor: isLag ? Colors.orangeAccent : _accentColor,
+        isLag: isLag,
+        lagMs: ms,
         onDismiss: () => overlayEntry.remove(),
       ),
     );
@@ -190,8 +249,15 @@ class _PermissionGuardState extends State<PermissionGuard>
 class _TopAlarmWidget extends StatefulWidget {
   final Color accentColor;
   final VoidCallback onDismiss;
+  final bool isLag;
+  final int lagMs;
 
-  const _TopAlarmWidget({required this.accentColor, required this.onDismiss});
+  const _TopAlarmWidget({
+    required this.accentColor,
+    required this.onDismiss,
+    this.isLag = false,
+    this.lagMs = 0,
+  });
 
   @override
   State<_TopAlarmWidget> createState() => _TopAlarmWidgetState();
@@ -249,6 +315,17 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
 
   @override
   Widget build(BuildContext context) {
+    String label;
+    if (widget.isLag) {
+      label = _showVersion
+          ? "CORE ENGINE OPTIMIZING..."
+          : "PERFORMANCE DROP: ${widget.lagMs}ms";
+    } else {
+      label = _showVersion
+          ? "METEOR OS v1.0.7 CORE ONLINE"
+          : "SYSTEM READY: METEOR ONLINE";
+    }
+
     return SafeArea(
       child: SlideTransition(
         position: _offsetAnimation,
@@ -278,7 +355,9 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.auto_awesome,
+                          widget.isLag
+                              ? Icons.bolt_rounded
+                              : Icons.auto_awesome,
                           color: widget.accentColor,
                           size: 18,
                         ),
@@ -296,12 +375,10 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                                   );
                                 },
                             child: Text(
-                              _showVersion
-                                  ? "METEOR OS v1.0.4 CORE ONLINE" // 전환 후 문구
-                                  : "SYSTEM READY: METEOR ONLINE", // 처음 문구
-                              key: ValueKey<bool>(
-                                _showVersion,
-                              ), // 키가 바뀌어야 애니메이션 작동
+                              label, // 🚀 3. 동적으로 바뀐 문구 적용
+                              key: ValueKey<String>(
+                                label,
+                              ), // 🚀 키를 문구로 설정해야 애니메이션이 작동함
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,

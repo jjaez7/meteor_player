@@ -1,39 +1,73 @@
 import 'package:flutter/material.dart';
+import '../menu/menu_main.dart';
+import '../features/left_menu_actions.dart';
 
 class PlayerAppBar extends StatelessWidget {
+  final bool isPip;
   final Orientation orientation;
   final Color textColor;
+  final Color bgColor;
   final bool isEditMode;
   final VoidCallback onResetLayout;
-  final Widget menuButton;
+  final Function(bool) onEditModeChanged;
+
+  final Color lpColor;
+  final Color artistColor;
+  final Color barColor;
+  final Color playBtnColor;
+  final Function(Color, String) onColorChanged;
+  final VoidCallback onResetColors;
 
   const PlayerAppBar({
     super.key,
+    required this.isPip,
     required this.orientation,
     required this.textColor,
+    required this.bgColor,
     required this.isEditMode,
     required this.onResetLayout,
-    required this.menuButton,
+    required this.onEditModeChanged,
+    required this.lpColor,
+    required this.artistColor,
+    required this.barColor,
+    required this.playBtnColor,
+    required this.onColorChanged,
+    required this.onResetColors,
   });
 
   @override
   Widget build(BuildContext context) {
-    // [핵심 수정] Positioned와 SafeArea를 제거합니다.
-    // 부모 위젯(VinylPlayerScreen)의 Stack에서 이미 처리하고 있기 때문입니다.
+
+    if (isPip) return const SizedBox.shrink();
+
+    // 글래스모피즘을 위한 소프트 컬러 계산
+    final glassColor = bgColor.withValues(alpha: 0.7);
+
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Stack(
         children: [
-          // 왼쪽: 확장 버튼
+          // [좌측] PiP 메뉴 버튼 (소프트 레이어 디자인)
           Align(
             alignment: Alignment.centerLeft,
-            child: IconButton(
-              icon: Icon(Icons.expand_more, size: 30, color: textColor),
-              onPressed: () {},
+            child: PopupMenuButton<String>(
+              color: glassColor,
+              elevation: 0, // 기본 그림자 제거 (커스텀 쉐이프로 대체)
+              constraints: const BoxConstraints(minWidth: 150),
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: textColor.withValues(alpha: 0.1), width: 1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              icon: Icon(Icons.expand_more_rounded, size: 32, color: textColor),
+              onSelected: (val) => LeftMenuActions.handleLeftMenuClick(context, val),
+              itemBuilder: (context) => [
+                _menuItem("PiP Mode", Icons.picture_in_picture_alt_rounded, "pip"),
+              ],
             ),
           ),
-          // 중앙: 로고 텍스트
+          
+          // [중앙] 로고
           Align(
             alignment: Alignment.center,
             child: Text(
@@ -43,10 +77,14 @@ class PlayerAppBar extends StatelessWidget {
                 letterSpacing: 2,
                 fontSize: 14,
                 color: textColor,
+                shadows: [
+                  Shadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, 2)),
+                ],
               ),
             ),
           ),
-          // 오른쪽: 초기화 및 메뉴 버튼
+
+          // [우측] 리셋 & 설정 메뉴
           Align(
             alignment: Alignment.centerRight,
             child: Row(
@@ -57,9 +95,72 @@ class PlayerAppBar extends StatelessWidget {
                     icon: const Icon(Icons.refresh, color: Colors.redAccent),
                     onPressed: onResetLayout,
                   ),
-                menuButton,
+                
+                PopupMenuButton<String>(
+                  color: glassColor,
+                  elevation: 0,
+                  constraints: const BoxConstraints(minWidth: 180),
+                  shape: RoundedRectangleBorder(
+                    side: BorderSide(color: textColor.withValues(alpha: 0.1), width: 1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  icon: Icon(Icons.more_vert, color: textColor, size: 28),
+                  onSelected: (val) => handleMenuClick(
+                    context: context,
+                    value: val,
+                    isEditMode: isEditMode,
+                    onEditModeChanged: onEditModeChanged,
+                    bgColor: bgColor,
+                    lpColor: lpColor,
+                    textColor: textColor,
+                    artistColor: artistColor,
+                    barColor: barColor,
+                    playBtnColor: playBtnColor,
+                    onColorChanged: onColorChanged,
+                    onResetColors: onResetColors,
+                    onResetLayout: onResetLayout,
+                  ),
+                  itemBuilder: (context) => [
+                    _menuItem("Theme Settings", Icons.palette_outlined, "settings"),
+                    _menuItem(
+                      isEditMode ? "Finish Layout" : "Edit Layout",
+                      isEditMode ? Icons.check_circle_rounded : Icons.dashboard_customize_outlined,
+                      "edit_mode",
+                    ),
+                    const PopupMenuDivider(height: 1),
+                    _menuItem("Creator Info", Icons.account_circle_outlined, "creator"),
+                    _menuItem("Terms of Service", Icons.article_outlined, "terms"),
+                  ],
+                ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _menuItem(String title, IconData icon, String value) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: textColor.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: textColor.withValues(alpha: 0.8), size: 18),
+          ),
+          const SizedBox(width: 14),
+          Text(
+            title, 
+            style: TextStyle(
+              color: textColor, 
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            )
           ),
         ],
       ),

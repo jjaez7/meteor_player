@@ -6,7 +6,7 @@ import 'utils/layout_engine.dart';
 import 'widgets/editable_element.dart';
 //import 'widgets/vinyl_component.dart';
 import 'widgets/player_app_bar.dart';
-import 'menu/menu_main.dart';
+//import 'menu/menu_main.dart';
 import 'color_manager.dart';
 //import 'main.dart';
 import 'widgets/player_elements.dart';
@@ -18,6 +18,7 @@ import 'logic/player_logic.dart';
 import 'widgets/classic_vinyl_view.dart';
 import 'widgets/stream_progress_bar.dart';
 import 'dart:ui';
+//import 'features/pip_handler.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -28,6 +29,7 @@ class VinylPlayerScreen extends StatefulWidget {
 class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isMinimalMode = false;
+  bool _isPipMode = false;
   //bool _isSurrealMode = false;
   // 기존 20줄짜리 코드를 이렇게 줄입니다.
   Future<void> _handleAbsoluteColorReset() async {
@@ -45,11 +47,22 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void _handleResetLayout() async {
     await PlayerLogic.resetLayout();
     if (!mounted) return;
+
     setState(() {
       final size = MediaQuery.of(context).size;
 
-      _portraitConfig = LayoutEngine.calculate(size, Orientation.portrait);
-      _landscapeConfig = LayoutEngine.calculate(size, Orientation.landscape);
+      // 🚀 LayoutEngine.calculate에 세 번째 인자(isPip)로 false를 전달합니다.
+      // 리셋은 보통 일반 모드에서 이루어지기 때문입니다.
+      _portraitConfig = LayoutEngine.calculate(
+        size,
+        Orientation.portrait,
+        false,
+      );
+      _landscapeConfig = LayoutEngine.calculate(
+        size,
+        Orientation.landscape,
+        false,
+      );
     });
   }
 
@@ -73,27 +86,48 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _barColor = const Color(0xFFB1A1D0);
   Color _playBtnColor = const Color(0xFF735DA5);
 
+  static const _pipChannel = MethodChannel('com.meteor.player/pip_status');
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // ..addListener(() => setState(() {})) 가 반드시 포함되어야 합니다.
+    _pipChannel.setMethodCallHandler((call) async {
+      if (call.method == "onPipModeChanged") {
+        bool isInPip = call.arguments;
+        if (mounted) {
+          setState(() {
+            _isPipMode = isInPip;
+            // PiP 모드 진입 시 편집 모드는 자동으로 끔
+            if (isInPip) isEditMode = false;
+          });
+        }
+      }
+    });
+
+    // 1. 애니메이션 컨트롤러 초기화 (addListener는 계속 삭제된 상태 유지)
     _lpController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 20),
-    ); // ..addListener 부분 삭제
+    );
 
     _needleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
-    ); // ..addListener 부분 삭제
+      duration: const Duration(milliseconds: 1000),
+    );
 
+    // 2. 가벼운 데이터(색상) 먼저 로드
     _loadSavedColors();
-    _listenToMusic();
 
+    // 3. 🚀 핵심 수정: 화면이 뜬 뒤에 순차적으로 로드
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
+      // A. 먼저 뮤직 리스너를 등록 (통신 통로 열기)
+      _listenToMusic();
+
+      // B. 무거운 이미지 데이터 호출은 조금 더 뒤로 미룸 (검은 화면 방지)
+      // 500ms -> 1000ms로 늘려 UI가 완전히 안착할 시간을 줍니다.
+      Future.delayed(const Duration(milliseconds: 2000), () {
         if (mounted) {
           _fetchInitialStatus();
         }
@@ -182,7 +216,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         if (mounted) {
           setState(() {
-            _isPlaying = true; 
+            _isPlaying = true;
           });
         }
 
@@ -214,51 +248,51 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   // 미디어 상태 업데이트 로직도 별도 함수로 빼면 더 깨끗합니다.
-void _handleMediaStatusUpdate(dynamic data) {
-  if (data == null || !mounted) return;
+  void _handleMediaStatusUpdate(dynamic data) {
+    if (data == null || !mounted) return;
 
-  bool incomingPlayingState = _isPlaying; 
+    bool incomingPlayingState = _isPlaying;
 
-  try {
-    if (data is Map) {
-      incomingPlayingState = data['isPlaying'] ?? _isPlaying;
-    } else if (data is String) {
-      incomingPlayingState = (data == 'playing');
-    } else if (data is bool) {
-      incomingPlayingState = data;
-    }
-  } catch (e) {
-    debugPrint("Media status parsing error: $e");
-  }
-
-  // 🚀 [핵심 수정] 
-  // 다른 앱에서 멈췄을 때(false가 들어왔을 때) 확실히 멈추도록 강제 제어합니다.
-  if (_isPlaying != incomingPlayingState) {
-    setState(() {
-      _isPlaying = incomingPlayingState;
-    });
-
-    if (_isPlaying) {
-      // 재생 상태로 변함 -> 바늘 내리고 LP 돌리기
-      if (!_lpController.isAnimating) {
-        _lpController.repeat(); 
+    try {
+      if (data is Map) {
+        incomingPlayingState = data['isPlaying'] ?? _isPlaying;
+      } else if (data is String) {
+        incomingPlayingState = (data == 'playing');
+      } else if (data is bool) {
+        incomingPlayingState = data;
       }
-      _needleController.forward();
-      HapticFeedback.lightImpact();
-    } else {
-      // 정지 상태로 변함 -> 바늘 올리고 LP 멈추기
-      _needleController.reverse();
-      
-      // 바늘이 올라가는 애니메이션 시간(약 200~300ms) 동안은 LP가 돌다가 멈추는 게 자연스러움
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted && !_isPlaying) {
-          _lpController.stop(); // 👈 여기서 확실히 멈춤
-        }
+    } catch (e) {
+      debugPrint("Media status parsing error: $e");
+    }
+
+    // 🚀 [핵심 수정]
+    // 다른 앱에서 멈췄을 때(false가 들어왔을 때) 확실히 멈추도록 강제 제어합니다.
+    if (_isPlaying != incomingPlayingState) {
+      setState(() {
+        _isPlaying = incomingPlayingState;
       });
-      HapticFeedback.mediumImpact();
+
+      if (_isPlaying) {
+        // 재생 상태로 변함 -> 바늘 내리고 LP 돌리기
+        if (!_lpController.isAnimating) {
+          _lpController.repeat();
+        }
+        _needleController.forward();
+        HapticFeedback.lightImpact();
+      } else {
+        // 정지 상태로 변함 -> 바늘 올리고 LP 멈추기
+        _needleController.reverse();
+
+        // 바늘이 올라가는 애니메이션 시간(약 200~300ms) 동안은 LP가 돌다가 멈추는 게 자연스러움
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted && !_isPlaying) {
+            _lpController.stop(); // 👈 여기서 확실히 멈춤
+          }
+        });
+        HapticFeedback.mediumImpact();
+      }
     }
   }
-}
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -277,47 +311,48 @@ void _handleMediaStatusUpdate(dynamic data) {
         final data = Map<String, dynamic>.from(result);
         final Uint8List? artData = data['albumArt'] as Uint8List?;
 
-        if (artData == null || artData.isEmpty) {
-          // 200ms 후에 재시도 (재귀 호출 방지를 위해 딱 한 번만 실행되도록 설계하는 것이 좋음)
-          Future.delayed(
-            const Duration(milliseconds: 200),
-            () => _fetchInitialStatus(),
-          );
-        }
-
-        // 1. 텍스트 정보 및 재생 상태 즉시 업데이트
+        // 🚀 [개선 1] 재귀 호출 대신 가벼운 텍스트 먼저 렌더링
+        // 앨범 아트가 없어도 제목/가수 정보는 먼저 띄워야 검은 화면을 탈출합니다.
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
-          // 네이티브에서 넘어온 artist 정보를 대문자로 변환하여 저장
           _currentArtist = (data['artist'] ?? "METEOR PLAYER").toUpperCase();
           _isPlaying = data['isPlaying'] ?? false;
-
-          // 앨범 아트 데이터가 유효한 경우에만 바이트 데이터 저장
-          if (artData != null && artData.isNotEmpty) {
-            _albumArtBytes = artData;
-          }
         });
 
-        // 2. [추가] 첫 곡 색상 추출 로직
-        // 이미지가 존재하고 데이터가 충분할 때만 테마 색상을 추출합니다.
-        if (artData != null && artData.length > 500) {
-          MusicColorLogic.extractThemeColors(artData).then((colors) {
-            if (mounted) {
-              setState(() {
-                _bgColor = colors['bg']!;
-                _playBtnColor = colors['btn']!;
-                _barColor = colors['bar']!;
-                _textColor = colors['text']!;
-                _artistColor = colors['artist']!;
+        // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
+        if (_isPlaying) {
+          // 즉시 실행하되 UI가 끊기지 않도록 컨트롤
+          if (!_lpController.isAnimating) _lpController.repeat();
+          _needleController.forward();
+        }
+
+        // 🚀 [개선 3] 무거운 데이터(이미지 및 색상 추출)는 비동기로 처리
+        if (artData != null && artData.isNotEmpty) {
+          // 이미지 저장 (이 작업도 setState를 한 번 더 타서 화면을 갱신합니다)
+          setState(() {
+            _albumArtBytes = artData;
+          });
+
+          // 🚀 [개선 4] 색상 추출은 Isolate나 아주 약간의 딜레이를 주어 UI 스레드를 방어
+          // 앱이 켜지자마자 계산하면 렉이 걸리므로 300ms 정도 뒤에 여유롭게 수행
+          Future.delayed(const Duration(milliseconds: 600), () {
+            if (mounted && artData.length > 500) {
+              MusicColorLogic.extractThemeColors(artData).then((colors) {
+                if (mounted) {
+                  setState(() {
+                    _bgColor = colors['bg']!;
+                    _playBtnColor = colors['btn']!;
+                    _barColor = colors['bar']!;
+                    _textColor = colors['text']!;
+                    _artistColor = colors['artist']!;
+                  });
+                }
               });
             }
           });
-        }
-
-        // 3. 초기 상태가 재생 중이면 애니메이션 즉시 가동
-        if (_isPlaying) {
-          if (!_lpController.isAnimating) _lpController.repeat();
-          _needleController.forward();
+        } else {
+          // 아예 데이터가 없는 경우에만 한 번만 더 시도 (무한 루프 방지)
+          // 여기에 재시도 횟수 제한 변수를 두는 것을 추천합니다.
         }
       }
     } catch (e) {
@@ -327,30 +362,49 @@ void _handleMediaStatusUpdate(dynamic data) {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
     return OrientationBuilder(
       builder: (context, orientation) {
-        final size = MediaQuery.of(context).size;
+        final bool isPip = _isPipMode;
         final isPortrait = orientation == Orientation.portrait;
 
-        // 1. 레이아웃 설정 로드 및 계산
+        /*  // 1. 레이아웃 설정 로드 및 계산
         if (isPortrait) {
           _portraitConfig ??= LayoutEngine.calculate(size, orientation);
         } else {
           _landscapeConfig ??= LayoutEngine.calculate(size, orientation);
         }
 
-        final config = isPortrait ? _portraitConfig! : _landscapeConfig!;
+        final config = isPortrait ? _portraitConfig! : _landscapeConfig!; */
+        final config = LayoutEngine.calculate(size, orientation, _isPipMode);
 
-        // 2. 텍스트 정렬을 위한 위치 계산
-        // 세로: 화면 85% 영역의 중앙 / 가로: LayoutEngine에서 정의한 오른쪽 좌표
+        // 1. PiP 여부 판별 (더 엄격한 기준)
+        // 가로가 세로보다 2배 이상 길고, 화면 높이가 350px 이하인 아주 작은 창일 때만 PiP로 인정
+        final bool isLandscape = orientation == Orientation.landscape && !isPip;
+
+        // 3. 기존 세로 모드용 계산식
         final double leftPadding = size.width * 0.08;
         final double safeLeftDx = (size.width * 0.85 / 2) + leftPadding;
-        final double finalContentDx = isPortrait
-            ? safeLeftDx
-            : config.titlePos.dx;
-        final double finalContentWidth = isPortrait
-            ? size.width * 0.85
-            : config.progressBarWidth;
+
+        // 4. 상황별 좌표 결정
+        double finalContentDx;
+        if (isPip) {
+          finalContentDx = config.titlePos.dx; // PiP 모드용 좌표 (LayoutEngine 설정값)
+        } else if (isPortrait) {
+          finalContentDx = safeLeftDx; // 세로 모드 고정 위치
+        } else {
+          finalContentDx = config.titlePos.dx; // 일반 가로 모드 좌표
+        }
+
+        // 5. 상황별 너비 결정
+        double finalContentWidth;
+        if (isPip) {
+          finalContentWidth = size.width * 0.5; // PiP: 좁은 너비
+        } else if (isPortrait) {
+          finalContentWidth = size.width * 0.85; // 세로: 넓은 너비
+        } else {
+          finalContentWidth = config.progressBarWidth; // 가로 모드 전용 너비
+        }
 
         return Scaffold(
           backgroundColor: Colors.transparent,
@@ -387,8 +441,8 @@ void _handleMediaStatusUpdate(dynamic data) {
                             _albumArtBytes!,
                             fit: BoxFit.cover, // 이제 이 설정이 화면 전체에 먹힙니다.
                             gaplessPlayback: true,
-                            cacheWidth: 600, // 너무 작으면 화질이 깨지니 600 정도로 상향
-                            cacheHeight: 1200, // 세로형 폰에 맞게 조절
+                            cacheWidth: 300, // 너무 작으면 화질이 깨지니 600 정도로 상향
+                            cacheHeight: 600, // 세로형 폰에 맞게 조절
                             filterQuality: FilterQuality.low,
                             opacity: const AlwaysStoppedAnimation(
                               0.8,
@@ -408,8 +462,8 @@ void _handleMediaStatusUpdate(dynamic data) {
                         // [1] 블러 레이어: 배경 이미지의 색감만 남깁니다.
                         BackdropFilter(
                           filter: ImageFilter.blur(
-                            sigmaX: 20,
-                            sigmaY: 20,
+                            sigmaX: 15,
+                            sigmaY: 15,
                           ), // 🚀 블러를 살짝 높여 몽환적으로
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 600),
@@ -533,6 +587,8 @@ void _handleMediaStatusUpdate(dynamic data) {
                                 title: _currentTitle,
                                 fontSize: config.titleSize * 1.1,
                                 textColor: _textColor,
+                                width: finalContentWidth,
+                                isPip: _isPipMode,
                               ),
                             ),
                           ),
@@ -625,74 +681,24 @@ void _handleMediaStatusUpdate(dynamic data) {
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: SafeArea(
-                    child: PlayerAppBar(
-                      orientation: orientation,
-                      textColor: _textColor,
-                      isEditMode: isEditMode,
-                      onResetLayout: _handleResetLayout,
-                      menuButton: PopupMenuButton<String>(
-                        color: _bgColor,
-                        elevation: 8, // 입체감 복구
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            22,
-                          ), // 더 둥글게 디자인 복구
-                        ),
-                        icon: Icon(
-                          Icons.more_vert,
-                          color: _textColor,
-                          size: 28,
-                        ),
-                        onSelected: (val) => handleMenuClick(
-                          context: context,
-                          value: val,
-                          isEditMode: isEditMode,
-                          onEditModeChanged: (v) =>
-                              setState(() => isEditMode = v),
-                          bgColor: _bgColor,
-                          lpColor: _lpColor,
-                          textColor: _textColor,
-                          artistColor: _artistColor,
-                          barColor: _barColor,
-                          playBtnColor: _playBtnColor,
-                          onColorChanged: _handleColorChange,
-                          onResetColors: _handleAbsoluteColorReset,
-                          onResetLayout: _handleResetLayout,
-                        ),
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: "settings",
-                            child: _buildMenuItem(
-                              Icons.palette_outlined,
-                              "Theme Settings",
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: "edit_mode",
-                            child: _buildMenuItem(
-                              isEditMode
-                                  ? Icons.check_circle_rounded
-                                  : Icons.dashboard_customize_outlined,
-                              isEditMode ? "Finish Layout" : "Edit Layout",
-                            ),
-                          ),
-                          const PopupMenuDivider(height: 1), // 구분선 디자인
-                          PopupMenuItem(
-                            value: "creator",
-                            child: _buildMenuItem(
-                              Icons.account_circle_outlined,
-                              "Creator Info",
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: "terms",
-                            child: _buildMenuItem(
-                              Icons.article_outlined,
-                              "Terms of Service",
-                            ),
-                          ),
-                        ],
+                  child: RepaintBoundary(
+                    child: SafeArea(
+                      child: PlayerAppBar(
+                        isPip: _isPipMode,
+                        orientation: orientation,
+                        textColor: _textColor,
+                        bgColor: _bgColor, // 메뉴 배경색
+                        isEditMode: isEditMode,
+                        onResetLayout: _handleResetLayout,
+                        // 아래 항목들을 추가로 넘겨줘야 내부에서 메뉴가 작동합니다.
+                        lpColor: _lpColor,
+                        artistColor: _artistColor,
+                        barColor: _barColor,
+                        playBtnColor: _playBtnColor,
+                        onColorChanged: _handleColorChange,
+                        onResetColors: _handleAbsoluteColorReset,
+                        onEditModeChanged: (v) =>
+                            setState(() => isEditMode = v),
                       ),
                     ),
                   ),
@@ -744,25 +750,6 @@ void _handleMediaStatusUpdate(dynamic data) {
         onResizeDelta: (s) => setState(() => onResize(s)),
         child: child,
       ),
-    );
-  }
-
-  // _buildEdit 함수 아래에 추가하세요
-  Widget _buildMenuItem(IconData icon, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: _textColor.withValues(alpha: 0.8), size: 22),
-        const SizedBox(width: 14), // 아이콘과 글자 사이 간격 복구
-        Text(
-          label,
-          style: TextStyle(
-            color: _textColor,
-            fontWeight: FontWeight.w500,
-            fontSize: 15,
-          ),
-        ),
-      ],
     );
   }
 }
