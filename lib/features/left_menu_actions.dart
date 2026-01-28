@@ -2,15 +2,20 @@ import 'package:flutter/material.dart';
 import 'pip_handler.dart';
 
 class LeftMenuActions {
-  static void handleLeftMenuClick(BuildContext context, String value) {
+  static void handleLeftMenuClick({
+    required BuildContext context,
+    required String value,
+    required VoidCallback onLockEnabled, // 잠금 활성화를 위한 콜백 추가
+  }) {
     if (value == "pip") {
-      // 이제 context 없이 바로 시스템 PiP를 호출합니다.
-      PipHandler.enterPipMode(); 
-      
-      // 메뉴 창이 열려있다면 닫아주는 센스 (선택 사항)
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
+      PipHandler.enterPipMode();
+      if (Navigator.canPop(context)) Navigator.pop(context);
+    } 
+    
+    // 🚀 화면 잠금 액션 추가
+    else if (value == "lock") {
+      onLockEnabled(); // 메인 화면의 _isScreenLocked를 true로 바꿈
+      if (Navigator.canPop(context)) Navigator.pop(context);
     }
   }
 }

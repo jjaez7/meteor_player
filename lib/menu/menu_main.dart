@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dialog_creator.dart';
 import 'dialog_terms.dart';
 import 'dialog_settings.dart';
+import 'dialog_manual.dart';
 
 // [수정] 뉴모픽 감성을 담은 팝업 아이템 빌더
 PopupMenuItem<String> buildPopupItem(
@@ -45,6 +46,8 @@ void handleMenuClick({
   required VoidCallback onResetLayout, // 레이아웃 리셋 추가
 }) {
   switch (value) {
+    case "manual":
+      showManualDialog(context);
     case "creator":
       showCreatorDialog(context);
       break;

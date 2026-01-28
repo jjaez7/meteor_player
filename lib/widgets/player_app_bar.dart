@@ -10,6 +10,7 @@ class PlayerAppBar extends StatelessWidget {
   final bool isEditMode;
   final VoidCallback onResetLayout;
   final Function(bool) onEditModeChanged;
+  final VoidCallback onLockToggle;
 
   final Color lpColor;
   final Color artistColor;
@@ -33,39 +34,47 @@ class PlayerAppBar extends StatelessWidget {
     required this.playBtnColor,
     required this.onColorChanged,
     required this.onResetColors,
+    required this.onLockToggle,
   });
 
   @override
   Widget build(BuildContext context) {
   final size = MediaQuery.of(context).size;
   final bool isFlipCover = size.height < 500 && size.width > size.height;  
-  
+
     if (isPip || isFlipCover) return const SizedBox.shrink();
     if (isPip) return const SizedBox.shrink();
 
     // 글래스모피즘을 위한 소프트 컬러 계산
     final glassColor = bgColor.withValues(alpha: 0.7);
 
-    return Container(
+return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Stack(
         children: [
-          // [좌측] PiP 메뉴 버튼 (소프트 레이어 디자인)
+          // [좌측] 메뉴 버튼
           Align(
             alignment: Alignment.centerLeft,
             child: PopupMenuButton<String>(
               color: glassColor,
-              elevation: 0, // 기본 그림자 제거 (커스텀 쉐이프로 대체)
+              elevation: 0,
               constraints: const BoxConstraints(minWidth: 150),
               shape: RoundedRectangleBorder(
                 side: BorderSide(color: textColor.withValues(alpha: 0.1), width: 1),
                 borderRadius: BorderRadius.circular(20),
               ),
               icon: Icon(Icons.expand_more_rounded, size: 32, color: textColor),
-              onSelected: (val) => LeftMenuActions.handleLeftMenuClick(context, val),
+              // 🚀 수정 1: 호출 시 파라미터 이름을 명시하고 콜백을 전달합니다.
+              onSelected: (val) => LeftMenuActions.handleLeftMenuClick(
+                context: context, 
+                value: val,
+                onLockEnabled: onLockToggle,
+              ),
+              // 🚀 수정 2: 메뉴 아이템 리스트에 Screen Lock을 추가합니다.
               itemBuilder: (context) => [
                 _menuItem("PiP Mode", Icons.picture_in_picture_alt_rounded, "pip"),
+                _menuItem("Screen Lock", Icons.lock_outline_rounded, "lock"),
               ],
             ),
           ),
@@ -133,6 +142,7 @@ class PlayerAppBar extends StatelessWidget {
                     const PopupMenuDivider(height: 1),
                     _menuItem("Creator Info", Icons.account_circle_outlined, "creator"),
                     _menuItem("Terms of Service", Icons.article_outlined, "terms"),
+                    _menuItem("Manual", Icons.terminal_rounded, "manual")
                   ],
                 ),
               ],

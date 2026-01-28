@@ -18,6 +18,7 @@ import 'logic/player_logic.dart';
 import 'widgets/classic_vinyl_view.dart';
 import 'widgets/stream_progress_bar.dart';
 import 'dart:ui';
+import 'features/screen_lock.dart';
 //import 'features/pip_handler.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
@@ -30,6 +31,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isMinimalMode = false;
   bool _isPipMode = false;
+
+  bool _isScreenLocked = false;
   //bool _isSurrealMode = false;
   // 기존 20줄짜리 코드를 이렇게 줄입니다.
   Future<void> _handleAbsoluteColorReset() async {
@@ -363,7 +366,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-
     final bool isFlipCover = size.height < 500 && size.width > size.height;
 
     return OrientationBuilder(
@@ -692,10 +694,21 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         onResetColors: _handleAbsoluteColorReset,
                         onEditModeChanged: (v) =>
                             setState(() => isEditMode = v),
+                        onLockToggle: () {
+                          setState(() {
+                            _isScreenLocked = true;
+                          });
+                        },
                       ),
                     ),
                   ),
                 ),
+                if (_isScreenLocked)
+                  Positioned.fill(
+                    child: ScreenLockOverlay(
+                      onUnlock: () => setState(() => _isScreenLocked = false),
+                    ),
+                  ),
               ],
             ),
           ),
