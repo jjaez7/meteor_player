@@ -40,7 +40,7 @@ class PlayerAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
   final size = MediaQuery.of(context).size;
-  final bool isFlipCover = size.height < 500 && size.width > size.height;  
+  final bool isFlipCover = size.width > size.height && size.width < 600;
 
     if (isPip || isFlipCover) return const SizedBox.shrink();
     if (isPip) return const SizedBox.shrink();

@@ -22,7 +22,7 @@ class MarqueeTitleWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final bool isFlipCover = size.height < 500 && size.width > size.height;
+    final bool isFlipCover = size.width > size.height && size.width < 600;
 
     // 공통 스타일 정의
     final TextStyle textStyle = TextStyle(
@@ -105,7 +105,7 @@ class ArtistTextWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final bool isFlipCover = size.height < 500 && size.width > size.height;
+    final bool isFlipCover = size.width > size.height && size.width < 600;
 
     return Text(
       artist.toUpperCase(),

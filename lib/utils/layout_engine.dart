@@ -9,12 +9,12 @@ class LayoutEngine {
     Orientation orientation,
     bool isPip,
   ) {
-    final isLandscape = orientation == Orientation.landscape;
 
-    // 반응형 단위 계산
+    final bool isFlipCover = size.width > size.height && size.width < 600;
+    final bool isLandscape = orientation == Orientation.landscape && !isFlipCover;
+
+        // 반응형 단위 계산
     double responsiveUnit = size.shortestSide;
-
-    final bool isFlipCover = size.height < 500 && size.width > size.height;
 
     if (isPip) {
       // 1. 비율 설정 (2.3:1)
