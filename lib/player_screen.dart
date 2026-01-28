@@ -363,24 +363,17 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+
+    final bool isFlipCover = size.height < 500 && size.width > size.height;
+
     return OrientationBuilder(
       builder: (context, orientation) {
-        final bool isPip = _isPipMode;
+        final bool isSpecialMode = _isPipMode || isFlipCover;
         final isPortrait = orientation == Orientation.portrait;
 
-        /*  // 1. 레이아웃 설정 로드 및 계산
-        if (isPortrait) {
-          _portraitConfig ??= LayoutEngine.calculate(size, orientation);
-        } else {
-          _landscapeConfig ??= LayoutEngine.calculate(size, orientation);
-        }
+        final config = LayoutEngine.calculate(size, orientation, isSpecialMode);
 
-        final config = isPortrait ? _portraitConfig! : _landscapeConfig!; */
-        final config = LayoutEngine.calculate(size, orientation, _isPipMode);
-
-        // 1. PiP 여부 판별 (더 엄격한 기준)
-        // 가로가 세로보다 2배 이상 길고, 화면 높이가 350px 이하인 아주 작은 창일 때만 PiP로 인정
-        final bool isLandscape = orientation == Orientation.landscape && !isPip;
+        final bool isLandscape = orientation == Orientation.landscape && !_isPipMode;
 
         // 3. 기존 세로 모드용 계산식
         final double leftPadding = size.width * 0.08;
@@ -388,7 +381,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         // 4. 상황별 좌표 결정
         double finalContentDx;
-        if (isPip) {
+        if (isSpecialMode) {
           finalContentDx = config.titlePos.dx; // PiP 모드용 좌표 (LayoutEngine 설정값)
         } else if (isPortrait) {
           finalContentDx = safeLeftDx; // 세로 모드 고정 위치
@@ -398,8 +391,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         // 5. 상황별 너비 결정
         double finalContentWidth;
-        if (isPip) {
-          finalContentWidth = size.width * 0.5; // PiP: 좁은 너비
+        if (isSpecialMode) {
+          finalContentWidth = size.width * 0.6; // PiP: 좁은 너비
         } else if (isPortrait) {
           finalContentWidth = size.width * 0.85; // 세로: 넓은 너비
         } else {

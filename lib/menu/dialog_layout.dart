@@ -52,7 +52,7 @@ void showLayoutDialog({
                     "Enable Edit Mode",
                     Switch(
                       value: isEditMode,
-                      activeColor: playBtnColor,
+                      activeThumbColor: playBtnColor,
                       activeTrackColor: playBtnColor.withValues(alpha: 0.3),
                       inactiveThumbColor: Colors.white60,
                       onChanged: (v) {

@@ -313,8 +313,15 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
     super.dispose();
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
+    // 1. 화면 사이즈 감지
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    
+    // 플립 커버 스크린 여부 판단 (보통 세로가 500px 미만)
+    final bool isSmallScreen = screenHeight < 500;
+
     String label;
     if (widget.isLag) {
       label = _showVersion
@@ -327,26 +334,34 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
     }
 
     return SafeArea(
+      // 2. 작은 화면에서는 상단 여백을 최소화
+      top: true,
+      bottom: false,
       child: SlideTransition(
         position: _offsetAnimation,
         child: Align(
           alignment: Alignment.topCenter,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 12 : 24, // 옆 간격 축소
+              vertical: isSmallScreen ? 8 : 20,    // 위 간격 축소
+            ),
             child: Material(
               color: Colors.transparent,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 20),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
+                    // 3. 작은 화면에서 너무 길어지지 않게 최대 너비 제한
+                    constraints: BoxConstraints(maxWidth: screenWidth * 0.9),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isSmallScreen ? 14 : 20,
+                      vertical: isSmallScreen ? 10 : 16, // 높이 대폭 축소
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 20),
                       border: Border.all(
                         color: Colors.white.withValues(alpha: 0.15),
                       ),
@@ -355,35 +370,25 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          widget.isLag
-                              ? Icons.bolt_rounded
-                              : Icons.auto_awesome,
+                          widget.isLag ? Icons.bolt_rounded : Icons.auto_awesome,
                           color: widget.accentColor,
-                          size: 18,
+                          size: isSmallScreen ? 14 : 18, // 아이콘 크기 조절
                         ),
-                        const SizedBox(width: 14),
-
-                        // 4. Flexible 내부를 AnimatedSwitcher로 교체
+                        SizedBox(width: isSmallScreen ? 8 : 14),
                         Flexible(
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 500),
-                            transitionBuilder:
-                                (Widget child, Animation<double> animation) {
-                                  return FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  );
-                                },
+                            transitionBuilder: (Widget child, Animation<double> animation) {
+                              return FadeTransition(opacity: animation, child: child);
+                            },
                             child: Text(
-                              label, // 🚀 3. 동적으로 바뀐 문구 적용
-                              key: ValueKey<String>(
-                                label,
-                              ), // 🚀 키를 문구로 설정해야 애니메이션이 작동함
-                              style: const TextStyle(
+                              label,
+                              key: ValueKey<String>(label),
+                              style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 11,
+                                fontSize: isSmallScreen ? 9 : 11, // 폰트 크기 조절
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
+                                letterSpacing: isSmallScreen ? 1.0 : 1.5,
                               ),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,

@@ -70,7 +70,7 @@ class SurrealPlayerView extends StatelessWidget {
   }
 
   Widget _buildAuroraBackground(Size size) {
-    return Container(
+    return SizedBox(
       width: size.width,
       height: size.height,
       child: Stack(

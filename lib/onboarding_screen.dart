@@ -112,6 +112,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     if (isLastPage) {
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('isFirstRun', false);
+                      if (!context.mounted) return;
                       if (mounted) Navigator.pushReplacementNamed(context, '/main');
                     } else {
                       _controller.nextPage(

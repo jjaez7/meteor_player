@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart'; // MethodChannel 사용을 위해 필요
+import 'package:flutter/foundation.dart';
 
 class PipHandler {
   // 메인 액티비티에서 설정한 채널명과 동일해야 합니다.
@@ -8,9 +9,9 @@ class PipHandler {
   static Future<void> enterPipMode() async {
     try {
       await _channel.invokeMethod('enterPip');
-      print("🚀 시스템 PiP 진입 성공");
+      debugPrint("🚀 시스템 PiP 진입 성공");
     } on PlatformException catch (e) {
-      print("❌ 시스템 PiP 진입 실패: ${e.message}");
+      debugPrint("❌ 시스템 PiP 진입 실패: ${e.message}");
     }
   }
 }

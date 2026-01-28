@@ -37,7 +37,10 @@ class PlayerAppBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
+  final size = MediaQuery.of(context).size;
+  final bool isFlipCover = size.height < 500 && size.width > size.height;  
+  
+    if (isPip || isFlipCover) return const SizedBox.shrink();
     if (isPip) return const SizedBox.shrink();
 
     // 글래스모피즘을 위한 소프트 컬러 계산

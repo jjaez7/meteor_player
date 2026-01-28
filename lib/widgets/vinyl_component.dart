@@ -54,13 +54,13 @@ class VinylDisk extends StatelessWidget {
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        const Color(0xFF35354A).withOpacity(0.4),
-                        const Color(0xFF0A0A0F).withOpacity(0.9),
+                        const Color(0xFF35354A).withValues(alpha: 0.4),
+                        const Color(0xFF0A0A0F).withValues(alpha: 0.9),
                       ],
                       stops: const [0.2, 1.0],
                     ),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.08),
+                      color: Colors.white.withValues(alpha: 0.08),
                       width: 1.5,
                     ),
                   ),
@@ -72,7 +72,7 @@ class VinylDisk extends StatelessWidget {
                   height: size * (0.95 - (index * 0.2)),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.05), width: 0.5),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 0.5),
                   ),
                 )),
 
@@ -85,7 +85,7 @@ class VinylDisk extends StatelessWidget {
                       painter: CircularTextPainter(
                         text: "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           fontSize: size * 0.024,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 2.5,
@@ -101,7 +101,7 @@ class VinylDisk extends StatelessWidget {
                   height: size * 0.38,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.15), width: 2),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 2),
                   ),
                   child: albumArt,
                 ),
@@ -119,9 +119,9 @@ class VinylDisk extends StatelessWidget {
                 gradient: SweepGradient(
                   colors: [
                     Colors.transparent,
-                    Colors.white.withOpacity(0.05),
+                    Colors.white.withValues(alpha: 0.05),
                     Colors.transparent,
-                    Colors.white.withOpacity(0.1),
+                    Colors.white.withValues(alpha: 0.1),
                     Colors.transparent,
                   ],
                   stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
@@ -138,7 +138,7 @@ class VinylDisk extends StatelessWidget {
               color: Colors.white,
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: const Color(0xFFD1C4E9).withOpacity(0.5), blurRadius: 8),
+                BoxShadow(color: const Color(0xFFD1C4E9).withValues(alpha: 0.5), blurRadius: 8),
               ],
             ),
           ),
@@ -185,7 +185,7 @@ class VinylNeedle extends StatelessWidget {
                         width: 4,
                         height: height * 0.75,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -194,9 +194,9 @@ class VinylNeedle extends StatelessWidget {
                         width: 20,
                         height: 35,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3A3A4A).withOpacity(0.8), // 👈 고정색으로 처리
+                          color: const Color(0xFF3A3A4A).withValues(alpha: 0.8), // 👈 고정색으로 처리
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.white.withOpacity(0.2)),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                         ),
                         child: Center(
                           child: Container(width: 2, height: 12, color: Colors.white24),

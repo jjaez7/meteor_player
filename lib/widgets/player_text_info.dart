@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:marquee/marquee.dart';
 
-// [제목 위젯] 
+// [제목 위젯]
 // 짧으면 고정, 길어서 화면 밖으로 나가면 전광판 모드
 class MarqueeTitleWidget extends StatelessWidget {
   final String title;
@@ -21,6 +21,9 @@ class MarqueeTitleWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final bool isFlipCover = size.height < 500 && size.width > size.height;
+
     // 공통 스타일 정의
     final TextStyle textStyle = TextStyle(
       fontSize: fontSize,
@@ -59,15 +62,18 @@ class MarqueeTitleWidget extends StatelessWidget {
 
         // 넘칠 때만 Marquee 실행, 아니면 일반 Text 반환
         if (textPainter.width > maxWidth) {
-          return Marquee(
-            key: Key(title),
-            text: title,
-            style: textStyle,
-            blankSpace: 100.0, // 넘칠 때 이어지는 간격
-            velocity: 50.0,
-            pauseAfterRound: const Duration(seconds: 3),
-            accelerationDuration: const Duration(milliseconds: 500),
-            accelerationCurve: Curves.easeInOut,
+          return SizedBox(
+            height: fontSize * 1.5,
+            child: Marquee(
+              key: Key(title),
+              text: title,
+              style: textStyle,
+              blankSpace: isFlipCover ? 50.0 : 100.0, // 넘칠 때 이어지는 간격
+              velocity: 50.0,
+              pauseAfterRound: const Duration(seconds: 3),
+              accelerationDuration: const Duration(milliseconds: 500),
+              accelerationCurve: Curves.easeInOut,
+            ),
           );
         } else {
           return Text(
@@ -98,16 +104,19 @@ class ArtistTextWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final bool isFlipCover = size.height < 500 && size.width > size.height;
+
     return Text(
       artist.toUpperCase(),
       textAlign: TextAlign.left,
-      maxLines: 2,
+      maxLines: isFlipCover ? 1 : 2,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontSize: fontSize,
+        fontSize: isFlipCover ? fontSize * 0.9 : fontSize,
         color: Colors.white.withValues(alpha: 0.6),
         fontWeight: FontWeight.w600,
-        letterSpacing: 2.0,
+        letterSpacing: isFlipCover ? 1.0 : 2.0,
         fontFamily: 'sans-serif-medium',
         shadows: [
           Shadow(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:typed_data';
 import 'vinyl_component.dart';
 
 class ClassicVinylView extends StatelessWidget {

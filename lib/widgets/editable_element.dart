@@ -38,7 +38,7 @@ class EditableElement extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: isEditMode
-              ? Border.all(color: Colors.orange.withOpacity(0.5), width: 2)
+              ? Border.all(color: Colors.orange.withValues(alpha: 0.5), width: 2)
               : null,
         ),
         child: child,

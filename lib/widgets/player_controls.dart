@@ -26,7 +26,7 @@ class PlayerControls extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               child: LinearProgressIndicator(
                 value: 0.35,
-                backgroundColor: Colors.black.withOpacity(0.05),
+                backgroundColor: Colors.black.withValues(alpha: 0.05),
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.black87),
                 minHeight: 5,
               ),
@@ -102,6 +102,6 @@ class PlayerControls extends StatelessWidget {
 
   // 기존의 서브 버튼 디자인 (연한 회색 아이콘)
   Widget _buildSideButton(IconData icon) {
-    return Icon(icon, size: 35, color: Colors.black.withOpacity(0.6));
+    return Icon(icon, size: 35, color: Colors.black.withValues(alpha: 0.6));
   }
 }

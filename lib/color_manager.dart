@@ -22,7 +22,7 @@ class ColorManager {
   // 개별 색상 저장
   static Future<void> saveColor(String target, Color color) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('${target}_color', color.value);
+    await prefs.setInt('${target}_color', color.toARGB32());
   }
 
   // 설정 초기화
