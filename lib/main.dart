@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mp_design/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
 
-late MyAudioHandler audioHandler;
+String appVersion="1.0.0";
 
+late MyAudioHandler audioHandler;
+final GlobalKey<PermissionGuardState> permissionGuardKey = GlobalKey<PermissionGuardState>();
 void main() async {
   // 1. 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
+
+  final packageInfo = await PackageInfo.fromPlatform();
+  appVersion = packageInfo.version;
 
   // 2. 초기 로드 (병렬 처리로 시간 단축)
   final results = await Future.wait([
@@ -28,7 +34,7 @@ void main() async {
 
   final prefs = results[0] as SharedPreferences;
   audioHandler = results[1] as MyAudioHandler;
-  
+
   final bool isFirstRun = prefs.getBool('isFirstRun') ?? true;
 
   // 3. UI 설정 (비동기로 실행하여 렌더링 시작을 앞당김)
@@ -48,8 +54,12 @@ void main() async {
 }
 
 class MyAudioHandler extends BaseAudioHandler {
-  static const MethodChannel _nativeChannel = MethodChannel('com.meteor.player/media_control');
-  static const EventChannel _statusChannel = EventChannel('com.meteor.player/media_status');
+  static const MethodChannel _nativeChannel = MethodChannel(
+    'com.meteor.player/media_control',
+  );
+  static const EventChannel _statusChannel = EventChannel(
+    'com.meteor.player/media_status',
+  );
 
   MyAudioHandler() {
     // 초기 상태 설정
@@ -78,12 +88,16 @@ class MyAudioHandler extends BaseAudioHandler {
       final String newTitle = mediaData['title'] ?? 'Unknown';
 
       // 1. 재생 상태 업데이트 (포지션 정보는 자주 바뀌어도 됨)
-      playbackState.add(playbackState.value.copyWith(
-        playing: isPlaying,
-        updatePosition: Duration(milliseconds: mediaData['position'] as int),
-        bufferedPosition: Duration(milliseconds: mediaData['position'] as int),
-        speed: isPlaying ? 1.0 : 0.0,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: isPlaying,
+          updatePosition: Duration(milliseconds: mediaData['position'] as int),
+          bufferedPosition: Duration(
+            milliseconds: mediaData['position'] as int,
+          ),
+          speed: isPlaying ? 1.0 : 0.0,
+        ),
+      );
 
       // 2. 🚀 미디어 아이템 업데이트 (제목이 바뀌었을 때만 수행하여 렉 방지)
       if (mediaItem.value?.title != newTitle) {
@@ -108,6 +122,16 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
+  Future<void> refreshMetadata() async {
+    try {
+      // 안드로이드 네이티브 측에서 이 메서드명을 받아서 처리하도록 설정해야 합니다.
+      await _nativeChannel.invokeMethod('requestMetadataRefresh');
+      debugPrint("Metadata refresh requested to Native");
+    } catch (e) {
+      debugPrint("Refresh Bridge Error: $e");
+    }
+  }
+
   @override
   Future<void> play() async => await _invokeNativeMediaKey(126);
   @override
@@ -129,7 +153,7 @@ class MeteorPlayer extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         // 네오포키즘 베이스 컬러
-        scaffoldBackgroundColor: const Color(0xFFE0E5EC), 
+        scaffoldBackgroundColor: const Color(0xFFE0E5EC),
         visualDensity: VisualDensity.adaptivePlatformDensity,
         fontFamily: 'Pretendard',
         textTheme: const TextTheme(
@@ -137,11 +161,32 @@ class MeteorPlayer extends StatelessWidget {
           bodyMedium: TextStyle(letterSpacing: -0.5),
         ),
       ),
-      home: isFirstRun 
-          ? const OnboardingScreen() 
-          : PermissionGuard(child: const VinylPlayerScreen()),
+      home: isFirstRun
+          ? const OnboardingScreen()
+          : StreamBuilder<PlaybackState>(
+              stream: audioHandler.playbackState,
+              builder: (context, snapshot) {
+                final isPlaying = snapshot.data?.playing ?? false;
+                return PermissionGuard(
+                  key: permissionGuardKey,
+                  isPlaying: isPlaying,
+                  child: const VinylPlayerScreen(),
+                );
+              },
+            ),
       routes: {
-        '/main': (context) => PermissionGuard(child: const VinylPlayerScreen()),
+        // 🚀 routes 부분도 StreamBuilder를 추가하여 일관성을 맞췄습니다.
+        '/main': (context) => StreamBuilder<PlaybackState>(
+          stream: audioHandler.playbackState,
+          builder: (context, snapshot) {
+            final isPlaying = snapshot.data?.playing ?? false;
+            return PermissionGuard(
+              key: permissionGuardKey,
+              isPlaying: isPlaying,
+              child: const VinylPlayerScreen(),
+            );
+          },
+        ),
       },
     );
   }

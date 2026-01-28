@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../main.dart';
 
 void showTermsDialog(BuildContext context) {
   final size = MediaQuery.of(context).size;
@@ -16,7 +17,10 @@ void showTermsDialog(BuildContext context) {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(30),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: 0.2),
+            width: 1.5,
+          ),
         ),
         contentPadding: EdgeInsets.all(isLandscape ? 16 : 24),
         content: SizedBox(
@@ -47,6 +51,34 @@ void showTermsDialog(BuildContext context) {
                             ),
                             const SizedBox(height: 24),
                             _buildAgreeButton(context, accentColor),
+                            const SizedBox(height: 16),
+
+                            Opacity(
+                              opacity: 0.4, // 시선을 분산시키지 않도록 연하게 처리
+                              child: Column(
+                                children: [
+                                  Text(
+                                    "© 2026 REDHOOK PROJECT. ALL RIGHTS RESERVED.",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w300,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "METEOR OS ENGINE v$appVersion",
+                                    style: TextStyle(
+                                      color: accentColor, // 포인트 컬러 사용
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -76,6 +108,34 @@ void showTermsDialog(BuildContext context) {
                       _buildTermsScrollArea(size, isLandscape),
                       const SizedBox(height: 30),
                       _buildAgreeButton(context, accentColor),
+                      const SizedBox(height: 16), // 버튼과의 간격
+
+                      Opacity(
+                        opacity: 0.4, // 시선을 분산시키지 않도록 연하게 처리
+                        child: Column(
+                          children: [
+                            Text(
+                              "© 2026 REDHOOK PROJECT. ALL RIGHTS RESERVED.",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w300,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "METEOR OS ENGINE v$appVersion",
+                              style: TextStyle(
+                                color: accentColor, // 포인트 컬러 사용
+                                fontSize: 8,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
           ),
@@ -119,23 +179,28 @@ Widget _buildTermsScrollArea(Size size, bool isLandscape) {
           children: [
             _TermsSection(
               title: "1. Service Overview",
-              content: "METEOR PLAYER is a local media player tool. It does not provide, host, or distribute any digital content. Users are solely responsible for the media files on their device.",
+              content:
+                  "METEOR PLAYER is a local media player tool. It does not provide, host, or distribute any digital content. Users are solely responsible for the media files on their device.",
             ),
             _TermsSection(
               title: "2. Data Privacy (No Collection)",
-              content: "We do not collect, store, or transmit any personal data, media metadata, or usage statistics to external servers. All processing occurs strictly on your local device.",
+              content:
+                  "We do not collect, store, or transmit any personal data, media metadata, or usage statistics to external servers. All processing occurs strictly on your local device.",
             ),
             _TermsSection(
               title: "3. Media Access Permissions",
-              content: "This app requires access to your device's media library to function. These permissions are used exclusively to index and play your audio files within the interface.",
+              content:
+                  "This app requires access to your device's media library to function. These permissions are used exclusively to index and play your audio files within the interface.",
             ),
             _TermsSection(
               title: "4. User Responsibility",
-              content: "Users must comply with local and international copyright laws. Unauthorized playback of copyrighted material is strictly prohibited and is the user's sole legal responsibility.",
+              content:
+                  "Users must comply with local and international copyright laws. Unauthorized playback of copyrighted material is strictly prohibited and is the user's sole legal responsibility.",
             ),
             _TermsSection(
               title: "5. Limitation of Liability",
-              content: "METEOR PLAYER is provided 'AS IS'. The developers (Redhook Project) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
+              content:
+                  "METEOR PLAYER is provided 'AS IS'. The developers (Redhook Project) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
             ),
           ],
         ),
@@ -164,7 +229,10 @@ class _TermsSection extends StatelessWidget {
                   color: const Color(0xFFD1C4E9),
                   borderRadius: BorderRadius.circular(2),
                   boxShadow: [
-                    BoxShadow(color: const Color(0xFFD1C4E9).withValues(alpha: 0.5), blurRadius: 6),
+                    BoxShadow(
+                      color: const Color(0xFFD1C4E9).withValues(alpha: 0.5),
+                      blurRadius: 6,
+                    ),
                   ],
                 ),
               ),
@@ -172,7 +240,11 @@ class _TermsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
@@ -182,7 +254,11 @@ class _TermsSection extends StatelessWidget {
             padding: const EdgeInsets.only(left: 14),
             child: Text(
               content,
-              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.75), height: 1.6),
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.75),
+                height: 1.6,
+              ),
             ),
           ),
         ],
@@ -201,19 +277,30 @@ Widget _buildAgreeButton(BuildContext context, Color accent) {
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [accent.withValues(alpha: 0.4), accent.withValues(alpha: 0.1)],
+          colors: [
+            accent.withValues(alpha: 0.4),
+            accent.withValues(alpha: 0.1),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: accent.withValues(alpha: 0.5)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 5)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
         ],
       ),
       child: const Text(
         "I AGREE & START",
-        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Colors.white),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+          color: Colors.white,
+        ),
       ),
     ),
   );

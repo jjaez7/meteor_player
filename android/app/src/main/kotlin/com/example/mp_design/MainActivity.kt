@@ -3,7 +3,6 @@ package com.example.mp_design
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
-import io.flutter.plugins.GeneratedPluginRegistrant
 import android.content.Context
 import android.content.ComponentName 
 import android.media.AudioManager
@@ -17,12 +16,20 @@ import android.view.KeyEvent
 import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import com.ryanheise.audioservice.AudioServiceActivity
-import android.content.res.Configuration // 🚀 추가: Configuration 임포트
+import android.content.res.Configuration
+import android.app.PendingIntent
+import android.app.RemoteAction
+import android.app.PictureInPictureParams
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
+import android.os.Build
 
 class MainActivity: AudioServiceActivity() {
     private val METHOD_CHANNEL = "com.meteor.player/media_control"
     private val EVENT_CHANNEL = "com.meteor.player/media_status"
-    private val PIP_CHANNEL = "com.meteor.player/pip_status" // 🚀 추가: PIP_CHANNEL 변수 정의
+    private val PIP_CHANNEL = "com.meteor.player/pip_status"
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastTitle: String? = null
@@ -30,26 +37,37 @@ class MainActivity: AudioServiceActivity() {
     private var activeController: MediaController? = null
     private var pipMethodChannel: MethodChannel? = null
 
+    // 🚀 [추가] PiP 시스템 버튼 클릭 수신 리시버
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            intent?.action?.let { action ->
+                // 버튼 클릭 시 Flutter의 PIP_CHANNEL을 통해 이벤트 전송
+                pipMethodChannel?.invokeMethod("onPipAction", action)
+            }
+        }
+    }
+
     // 🚀 PiP 변경 감지 오버라이드
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration?) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        // Flutter로 PiP 진입/이탈 여부를 즉시 전송
         pipMethodChannel?.invokeMethod("onPipModeChanged", isInPictureInPictureMode)
     }
 
     private val mediaCallback = object : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             pushStatusUpdate()
+            // 🚀 재생 상태 변경 시 PIP 버튼 아이콘도 갱신
+            updatePipParams()
         }
         override fun onMetadataChanged(metadata: MediaMetadata?) {
             pushStatusUpdate()
+            updatePipParams()
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // 🚀 PiP 채널 초기화
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
@@ -66,7 +84,6 @@ class MainActivity: AudioServiceActivity() {
                     if (status != null) result.success(status)
                     else result.error("UNAVAILABLE", "No session", null)
                 }
-                // 🚀 [추가] 특정 위치로 이동 (Seek) 로직
                 "seek" -> {
                     val relativePos = call.argument<Double>("position") ?: 0.0
                     val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
@@ -79,7 +96,6 @@ class MainActivity: AudioServiceActivity() {
                         
                         if (duration > 0) {
                             val seekToMs = (duration * relativePos).toLong()
-                            // 실제 미디어 세션에 이동 명령 전송
                             controller.transportControls.seekTo(seekToMs)
                             result.success(true)
                         } else {
@@ -89,18 +105,27 @@ class MainActivity: AudioServiceActivity() {
                         result.error("NO_SESSION", "No active media session found", null)
                     }
                 }
-
                 "enterPip" -> {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        val aspectRatio = android.util.Rational(23, 10) 
-        
-                        val params = android.app.PictureInPictureParams.Builder()
-                        .setAspectRatio(aspectRatio)
-                        .build()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val params = PictureInPictureParams.Builder()
+                            .setAspectRatio(android.util.Rational(23, 10))
+                            .setActions(createPipActions()) // 🚀 버튼 세팅
+                            .build()
                         enterPictureInPictureMode(params)
                         result.success(true)
                     } else {
                         result.error("VERSION_LOW", "PiP requires Android Oreo or higher", null)
+                    }
+                }
+                "requestMetadataRefresh" -> {
+                    // 1. 강제로 현재 상태를 읽어옴
+                    val status = getMediaStatus()
+                    if (status != null) {
+                        // 2. 이벤트 채널을 통해 Flutter로 즉시 전송
+                        eventSink?.success(status)
+                        result.success(true)
+                    } else {
+                        result.error("REFRESH_FAILED", "No active session to refresh", null)
                     }
                 }
                 else -> result.notImplemented()
@@ -120,6 +145,63 @@ class MainActivity: AudioServiceActivity() {
         )
     }
 
+    // 🚀 [추가] PIP 버튼 생성
+    private fun createPipActions(): List<RemoteAction> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return emptyList()
+
+        val isPlaying = activeController?.playbackState?.state == PlaybackState.STATE_PLAYING
+
+        return listOf(
+            createAction(android.R.drawable.ic_media_previous, "Previous", "PREV", 1),
+            createAction(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play, 
+                         if (isPlaying) "Pause" else "Play", "TOGGLE", 2),
+            createAction(android.R.drawable.ic_media_next, "Next", "NEXT", 3)
+        )
+    }
+
+private fun createAction(iconRes: Int, title: String, action: String, requestCode: Int): RemoteAction {
+    val intent = Intent(action).apply {
+        // 🚀 이 줄을 추가합니다. 내 앱(package)에게만 신호를 보내도록 주소를 찍는 겁니다.
+        `package` = packageName 
+    }
+    
+    val pendingIntent = PendingIntent.getBroadcast(
+        this, 
+        requestCode, 
+        intent, 
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
+    return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
+}
+
+    private fun updatePipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
+            setPictureInPictureParams(PictureInPictureParams.Builder()
+                .setActions(createPipActions())
+                .build())
+        }
+    }
+
+    // 🚀 [추가] 앱 생명주기에 따른 리시버 등록/해제
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter().apply {
+            addAction("PREV")
+            addAction("TOGGLE")
+            addAction("NEXT")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, filter)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { unregisterReceiver(pipReceiver) } catch (e: Exception) {}
+    }
+
     private fun pushStatusUpdate() {
         val data = getMediaStatus()
         if (data != null && eventSink != null) {
@@ -129,9 +211,7 @@ class MainActivity: AudioServiceActivity() {
 
     private fun getMediaStatus(): Map<String, Any>? {
         return try {
-            val mediaSessionManager = getSystemService(Context.AUDIO_SERVICE).let { 
-                getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager 
-            }
+            val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
             val componentName = ComponentName(this, "com.notification_listener_service.NotificationListenerServiceImpl")
             val controllers = mediaSessionManager.getActiveSessions(componentName)
 
@@ -153,15 +233,7 @@ class MainActivity: AudioServiceActivity() {
                     val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
                     val stream = ByteArrayOutputStream()
                     scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-                    val bytes = stream.toByteArray()
-
-                    if (bytes.size > 800 * 1024) {
-                        val backupStream = ByteArrayOutputStream()
-                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 40, backupStream)
-                        backupStream.toByteArray()
-                    } else {
-                        bytes
-                    }
+                    stream.toByteArray()
                 }
 
                 mutableMapOf<String, Any>(

@@ -20,28 +20,40 @@ class EditableElement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // [수정] 여기서 Positioned를 제거하고 내부 알맹이(GestureDetector)만 리턴합니다.
-    return GestureDetector(
-      onScaleUpdate: isEditMode
-          ? (details) {
-              if (details.pointerCount == 1) {
-                onDrag(details.focalPointDelta);
-              } else if (details.scale != 1.0) {
-                double delta = (details.scale > 1.0) ? 2.0 : -2.0;
-                onResizeDelta(delta);
-              }
-            }
-          : null,
-      child: Container(
-        width: width,
-        height: height,
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          border: isEditMode
-              ? Border.all(color: Colors.orange.withValues(alpha: 0.5), width: 2)
-              : null,
-        ),
-        child: child,
+        children: [
+          // 1. 실제 버튼 (편집 모드가 아닐 땐 얘만 살아있음)
+          child,
+
+          // 2. 편집 모드일 때만 '위에' 덮개 레이어를 씌움
+          if (isEditMode)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onScaleUpdate: (details) {
+                  if (details.pointerCount == 1) {
+                    onDrag(details.focalPointDelta);
+                  } else if (details.scale != 1.0) {
+                    double delta = (details.scale > 1.0) ? 2.0 : -2.0;
+                    onResizeDelta(delta);
+                  }
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.5),
+                      width: 2,
+                    ),
+                    color: Colors.transparent, // 투명하지만 터치는 받는 영역
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../main.dart';
 
 void showManualDialog(BuildContext context) {
   showDialog(
@@ -99,7 +100,7 @@ class ManualDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "METEOR v1.0.7-RELEASE / STABLE",
+                    "METEOR v$appVersion-RELEASE / STABLE",
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.15),
                       fontSize: 8,

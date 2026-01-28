@@ -2,17 +2,23 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
+import 'main.dart';
 
 class PermissionGuard extends StatefulWidget {
   final Widget child;
+  final bool isPlaying;
 
-  const PermissionGuard({super.key, required this.child});
+  const PermissionGuard({
+    super.key,
+    required this.child,
+    this.isPlaying = false,
+  });
 
   @override
-  State<PermissionGuard> createState() => _PermissionGuardState();
+  State<PermissionGuard> createState() => PermissionGuardState();
 }
 
-class _PermissionGuardState extends State<PermissionGuard>
+class PermissionGuardState extends State<PermissionGuard>
     with WidgetsBindingObserver {
   bool _isPermissionGranted = true;
   bool _hasShowBootAlarm = false; // 부팅 알림 중복 방지
@@ -63,17 +69,17 @@ class _PermissionGuardState extends State<PermissionGuard>
         // 연속으로 10프레임 이상 안정적이면 "진짜 준비됨"으로 판단
         if (_stableFrameCount > 10) {
           _hasShowBootAlarm = true;
-          _showTopStatusAlarm(); // 부팅 알림 호출
+          showTopStatusAlarm(); // 부팅 알림 호출
         }
       }
 
       // 2. 기존 렉 감지 로직
-      if (frameTime > _lagThresholdMs) {
+      if (widget.isPlaying && frameTime > _lagThresholdMs) {
         final now = DateTime.now();
         if (_lastLagTime == null ||
             now.difference(_lastLagTime!) > const Duration(seconds: 10)) {
           _lastLagTime = now;
-          _showTopStatusAlarm(isLag: true, ms: frameTime.toInt());
+          showTopStatusAlarm(isLag: true, ms: frameTime.toInt());
         }
       }
 
@@ -113,7 +119,7 @@ class _PermissionGuardState extends State<PermissionGuard>
   }
 
   // ✨ 상단에서 내려오는 커스텀 글래스 알림 호출
-  void _showTopStatusAlarm({bool isLag = false, int ms = 0}) {
+  void showTopStatusAlarm({bool isLag = false, int ms = 0, bool isSyncing = false}) {
     if (!mounted) return;
 
     final overlay = Overlay.of(context);
@@ -123,6 +129,7 @@ class _PermissionGuardState extends State<PermissionGuard>
       builder: (context) => _TopAlarmWidget(
         accentColor: isLag ? Colors.orangeAccent : _accentColor,
         isLag: isLag,
+        isSyncing: isSyncing,
         lagMs: ms,
         onDismiss: () => overlayEntry.remove(),
       ),
@@ -251,12 +258,14 @@ class _TopAlarmWidget extends StatefulWidget {
   final VoidCallback onDismiss;
   final bool isLag;
   final int lagMs;
+  final bool isSyncing;
 
   const _TopAlarmWidget({
     required this.accentColor,
     required this.onDismiss,
     this.isLag = false,
     this.lagMs = 0,
+    this.isSyncing = false,
   });
 
   @override
@@ -313,23 +322,27 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
     super.dispose();
   }
 
-@override
+  @override
   Widget build(BuildContext context) {
     // 1. 화면 사이즈 감지
     final double screenHeight = MediaQuery.of(context).size.height;
     final double screenWidth = MediaQuery.of(context).size.width;
-    
+
     // 플립 커버 스크린 여부 판단 (보통 세로가 500px 미만)
     final bool isSmallScreen = screenHeight < 500;
 
     String label;
-    if (widget.isLag) {
+    if (widget.isSyncing) {
+      label = _showVersion
+          ? "METEOR ENGINE STABILIZED"
+          : "SYSTEM RE-SYNCING...";
+    } else if (widget.isLag) {
       label = _showVersion
           ? "CORE ENGINE OPTIMIZING..."
           : "PERFORMANCE DROP: ${widget.lagMs}ms";
     } else {
       label = _showVersion
-          ? "METEOR OS v1.0.7 CORE ONLINE"
+          ? "METEOR OS v$appVersion CORE ONLINE"
           : "SYSTEM READY: METEOR ONLINE";
     }
 
@@ -344,7 +357,7 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
           child: Padding(
             padding: EdgeInsets.symmetric(
               horizontal: isSmallScreen ? 12 : 24, // 옆 간격 축소
-              vertical: isSmallScreen ? 8 : 20,    // 위 간격 축소
+              vertical: isSmallScreen ? 8 : 20, // 위 간격 축소
             ),
             child: Material(
               color: Colors.transparent,
@@ -361,7 +374,9 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 20),
+                      borderRadius: BorderRadius.circular(
+                        isSmallScreen ? 12 : 20,
+                      ),
                       border: Border.all(
                         color: Colors.white.withValues(alpha: 0.15),
                       ),
@@ -370,7 +385,12 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          widget.isLag ? Icons.bolt_rounded : Icons.auto_awesome,
+                          widget.isSyncing
+                              ? Icons
+                                    .sync_problem_rounded // 혹은 Icons.refresh_rounded
+                              : (widget.isLag
+                                    ? Icons.bolt_rounded
+                                    : Icons.auto_awesome),
                           color: widget.accentColor,
                           size: isSmallScreen ? 14 : 18, // 아이콘 크기 조절
                         ),
@@ -378,9 +398,13 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                         Flexible(
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 500),
-                            transitionBuilder: (Widget child, Animation<double> animation) {
-                              return FadeTransition(opacity: animation, child: child);
-                            },
+                            transitionBuilder:
+                                (Widget child, Animation<double> animation) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: child,
+                                  );
+                                },
                             child: Text(
                               label,
                               key: ValueKey<String>(label),

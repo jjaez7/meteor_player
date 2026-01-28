@@ -8,7 +8,7 @@ import 'widgets/editable_element.dart';
 import 'widgets/player_app_bar.dart';
 //import 'menu/menu_main.dart';
 import 'color_manager.dart';
-//import 'main.dart';
+import 'main.dart';
 import 'widgets/player_elements.dart';
 import 'widgets/player_text_info.dart';
 import 'widgets/needle_component.dart';
@@ -76,6 +76,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   late AnimationController _lpController, _needleController;
   bool isEditMode = false, _isPlaying = false;
   PlayerConfig? _portraitConfig, _landscapeConfig;
+  DateTime? _lastSyncTime;
 
   String _currentTitle = "Ready to Play";
   String _currentArtist = "METEOR PLAYER";
@@ -97,15 +98,35 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     WidgetsBinding.instance.addObserver(this);
 
     _pipChannel.setMethodCallHandler((call) async {
-      if (call.method == "onPipModeChanged") {
-        bool isInPip = call.arguments;
-        if (mounted) {
-          setState(() {
-            _isPipMode = isInPip;
-            // PiP 모드 진입 시 편집 모드는 자동으로 끔
-            if (isInPip) isEditMode = false;
-          });
-        }
+      switch (call.method) {
+        case "onPipModeChanged":
+          bool isInPip = call.arguments;
+          if (mounted) {
+            setState(() {
+              _isPipMode = isInPip;
+              if (isInPip) isEditMode = false;
+            });
+          }
+          break;
+
+        case "onPipAction":
+          // 네이티브에서 invokeMethod("onPipAction", action)으로 보냈으므로
+          // arguments는 Map이 아니라 문자열(String) 그 자체입니다.
+          final String actionName = call.arguments.toString();
+          debugPrint("📥 PiP 신호 수신: $actionName");
+
+          // 문자열 비교 시 공백 제거 및 대문자 확인으로 더 확실하게 처리
+          if (actionName.trim() == "TOGGLE") {
+            debugPrint("✅ 재생 토글 실행");
+            _handleInternalToggle();
+          } else if (actionName.trim() == "NEXT") {
+            debugPrint("✅ 다음 곡 실행");
+            PlayerLogic.skipNext();
+          } else if (actionName.trim() == "PREV") {
+            debugPrint("✅ 이전 곡 실행");
+            PlayerLogic.skipPrevious();
+          }
+          break;
       }
     });
 
@@ -137,6 +158,52 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       });
     });
   }
+
+  void _handleInternalToggle() {
+    PlayerLogic.togglePlay(
+      isPlaying: _isPlaying,
+      onToggle: () {
+        if (mounted) {
+          setState(() {
+            _isPlaying = !_isPlaying;
+            if (_isPlaying) {
+              _lpController.repeat();
+              _needleController.forward();
+            } else {
+              _lpController.stop();
+              _needleController.reverse();
+            }
+          });
+          HapticFeedback.lightImpact();
+        }
+      },
+    );
+  }
+
+void _handleManualRefresh() async {
+  final now = DateTime.now();
+
+  if (_lastSyncTime != null && 
+      now.difference(_lastSyncTime!) < const Duration(seconds: 10)) {
+    
+    await HapticFeedback.selectionClick(); 
+    
+    return; 
+  }
+
+  _lastSyncTime = now;
+  await HapticFeedback.heavyImpact();
+  
+  permissionGuardKey.currentState?.showTopStatusAlarm(isSyncing: true); 
+
+  try {
+    await audioHandler.refreshMetadata(); 
+    await _fetchInitialStatus();
+  } catch (e) {
+    debugPrint("Sync Error: $e");
+    _lastSyncTime = null; 
+  }
+}
 
   @override
   void dispose() {
@@ -375,7 +442,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         final config = LayoutEngine.calculate(size, orientation, isSpecialMode);
 
-        final bool isLandscape = orientation == Orientation.landscape && !_isPipMode;
+        final bool isLandscape =
+            orientation == Orientation.landscape && !_isPipMode;
 
         // 3. 기존 세로 모드용 계산식
         final double leftPadding = size.width * 0.08;
@@ -411,37 +479,39 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
               children: [
                 if (_albumArtBytes != null)
                   Positioned.fill(
-                    child: RepaintBoundary(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 600),
-                        // 🚀 핵심: AnimatedSwitcher의 자식이 전체를 채우도록 설정
-                        layoutBuilder:
-                            (
-                              Widget? currentChild,
-                              List<Widget> previousChildren,
-                            ) {
-                              return Stack(
-                                children: [
-                                  ...previousChildren,
-                                  if (currentChild != null) currentChild,
-                                ],
-                              );
-                            },
-                        child: SizedBox.expand(
-                          // 🚀 이미지가 화면 전체로 늘어나도록 강제
-                          key: ValueKey(
-                            '${_currentTitle}_${_albumArtBytes.hashCode}',
-                          ),
-                          child: Image.memory(
-                            _albumArtBytes!,
-                            fit: BoxFit.cover, // 이제 이 설정이 화면 전체에 먹힙니다.
-                            gaplessPlayback: true,
-                            cacheWidth: 300, // 너무 작으면 화질이 깨지니 600 정도로 상향
-                            cacheHeight: 600, // 세로형 폰에 맞게 조절
-                            filterQuality: FilterQuality.low,
-                            opacity: const AlwaysStoppedAnimation(
-                              0.8,
-                            ), // 0.2보다 훨씬 선명하게
+                    child: IgnorePointer(
+                      child: RepaintBoundary(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 600),
+                          // 🚀 핵심: AnimatedSwitcher의 자식이 전체를 채우도록 설정
+                          layoutBuilder:
+                              (
+                                Widget? currentChild,
+                                List<Widget> previousChildren,
+                              ) {
+                                return Stack(
+                                  children: [
+                                    ...previousChildren,
+                                    if (currentChild != null) currentChild,
+                                  ],
+                                );
+                              },
+                          child: SizedBox.expand(
+                            // 🚀 이미지가 화면 전체로 늘어나도록 강제
+                            key: ValueKey(
+                              '${_currentTitle}_${_albumArtBytes.hashCode}',
+                            ),
+                            child: Image.memory(
+                              _albumArtBytes!,
+                              fit: BoxFit.cover, // 이제 이 설정이 화면 전체에 먹힙니다.
+                              gaplessPlayback: true,
+                              cacheWidth: 300, // 너무 작으면 화질이 깨지니 600 정도로 상향
+                              cacheHeight: 600, // 세로형 폰에 맞게 조절
+                              filterQuality: FilterQuality.low,
+                              opacity: const AlwaysStoppedAnimation(
+                                0.8,
+                              ), // 0.2보다 훨씬 선명하게
+                            ),
                           ),
                         ),
                       ),
@@ -451,42 +521,44 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 // 블러 레이어 (이 부분은 동일하되, sigma 수치만 확인하세요)
                 // 배경을 흐리게 만들고 가독성을 높이는 필터 레이어
                 Positioned.fill(
-                  child: RepaintBoundary(
-                    child: Stack(
-                      children: [
-                        // [1] 블러 레이어: 배경 이미지의 색감만 남깁니다.
-                        BackdropFilter(
-                          filter: ImageFilter.blur(
-                            sigmaX: 15,
-                            sigmaY: 15,
-                          ), // 🚀 블러를 살짝 높여 몽환적으로
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 600),
-                            // 배경색을 덮되, 투명도를 조절해 앨범 아트의 생동감을 살립니다.
-                            color: _bgColor.withValues(alpha: 0.4),
-                          ),
-                        ),
-
-                        // [2] 소프트 레이어 (가장 중요): 글래스모피즘의 핵심 '어둠의 계층'
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 600),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                // 상단: 상단 바 아이콘들을 위해 아주 살짝만 어둡게
-                                Colors.black.withValues(alpha: 0.2),
-                                // 중간: 앨범 아트의 색이 가장 잘 투영되는 지점
-                                Colors.black.withValues(alpha: 0.1),
-                                // 하단: 🚀 텍스트 가독성을 위해 묵직하게 블랙 그라데이션
-                                Colors.black.withValues(alpha: 0.7),
-                              ],
-                              stops: const [0.0, 0.4, 1.0],
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: Stack(
+                        children: [
+                          // [1] 블러 레이어: 배경 이미지의 색감만 남깁니다.
+                          BackdropFilter(
+                            filter: ImageFilter.blur(
+                              sigmaX: 15,
+                              sigmaY: 15,
+                            ), // 🚀 블러를 살짝 높여 몽환적으로
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 600),
+                              // 배경색을 덮되, 투명도를 조절해 앨범 아트의 생동감을 살립니다.
+                              color: _bgColor.withValues(alpha: 0.4),
                             ),
                           ),
-                        ),
-                      ],
+
+                          // [2] 소프트 레이어 (가장 중요): 글래스모피즘의 핵심 '어둠의 계층'
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 600),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  // 상단: 상단 바 아이콘들을 위해 아주 살짝만 어둡게
+                                  Colors.black.withValues(alpha: 0.2),
+                                  // 중간: 앨범 아트의 색이 가장 잘 투영되는 지점
+                                  Colors.black.withValues(alpha: 0.1),
+                                  // 하단: 🚀 텍스트 가독성을 위해 묵직하게 블랙 그라데이션
+                                  Colors.black.withValues(alpha: 0.7),
+                                ],
+                                stops: const [0.0, 0.4, 1.0],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -518,15 +590,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                         // 외부 파일로 뺀 위젯 호출
                         RepaintBoundary(
-                          child: ClassicVinylView(
-                            isMinimalMode: _isMinimalMode,
-                            size: config.lpSize,
-                            albumArtBytes: _albumArtBytes,
-                            title: _currentTitle,
-                            artist: _currentArtist,
-                            lpController: _lpController,
-                            onToggleMode: () => setState(
-                              () => _isMinimalMode = !_isMinimalMode,
+                          child: GestureDetector(
+                            onLongPress: _handleManualRefresh,
+                            child: ClassicVinylView(
+                              isMinimalMode: _isMinimalMode,
+                              size: config.lpSize,
+                              albumArtBytes: _albumArtBytes,
+                              title: _currentTitle,
+                              artist: _currentArtist,
+                              lpController: _lpController,
+                              onToggleMode: () => setState(
+                                () => _isMinimalMode = !_isMinimalMode,
+                              ),
                             ),
                           ),
                         ),
@@ -672,37 +747,38 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 ),
 
                 // [2] 상단 앱바 레이어
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: RepaintBoundary(
-                    child: SafeArea(
-                      child: PlayerAppBar(
-                        isPip: _isPipMode,
-                        orientation: orientation,
-                        textColor: _textColor,
-                        bgColor: _bgColor, // 메뉴 배경색
-                        isEditMode: isEditMode,
-                        onResetLayout: _handleResetLayout,
-                        // 아래 항목들을 추가로 넘겨줘야 내부에서 메뉴가 작동합니다.
-                        lpColor: _lpColor,
-                        artistColor: _artistColor,
-                        barColor: _barColor,
-                        playBtnColor: _playBtnColor,
-                        onColorChanged: _handleColorChange,
-                        onResetColors: _handleAbsoluteColorReset,
-                        onEditModeChanged: (v) =>
-                            setState(() => isEditMode = v),
-                        onLockToggle: () {
-                          setState(() {
-                            _isScreenLocked = true;
-                          });
-                        },
+                if (!_isPipMode)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: RepaintBoundary(
+                      child: SafeArea(
+                        child: PlayerAppBar(
+                          isPip: _isPipMode,
+                          orientation: orientation,
+                          textColor: _textColor,
+                          bgColor: _bgColor, // 메뉴 배경색
+                          isEditMode: isEditMode,
+                          onResetLayout: _handleResetLayout,
+                          // 아래 항목들을 추가로 넘겨줘야 내부에서 메뉴가 작동합니다.
+                          lpColor: _lpColor,
+                          artistColor: _artistColor,
+                          barColor: _barColor,
+                          playBtnColor: _playBtnColor,
+                          onColorChanged: _handleColorChange,
+                          onResetColors: _handleAbsoluteColorReset,
+                          onEditModeChanged: (v) =>
+                              setState(() => isEditMode = v),
+                          onLockToggle: () {
+                            setState(() {
+                              _isScreenLocked = true;
+                            });
+                          },
+                        ),
                       ),
                     ),
                   ),
-                ),
                 if (_isScreenLocked)
                   Positioned.fill(
                     child: ScreenLockOverlay(
