@@ -7,6 +7,7 @@ import 'package:mp_design/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
 
+
 String appVersion="1.0.0";
 
 late MyAudioHandler audioHandler;
@@ -35,6 +36,7 @@ void main() async {
   final prefs = results[0] as SharedPreferences;
   audioHandler = results[1] as MyAudioHandler;
 
+
   final bool isFirstRun = prefs.getBool('isFirstRun') ?? true;
 
   // 3. UI 설정 (비동기로 실행하여 렌더링 시작을 앞당김)
@@ -52,6 +54,7 @@ void main() async {
 
   runApp(MeteorPlayer(isFirstRun: isFirstRun));
 }
+
 
 class MyAudioHandler extends BaseAudioHandler {
   static const MethodChannel _nativeChannel = MethodChannel(
@@ -145,6 +148,7 @@ class MyAudioHandler extends BaseAudioHandler {
 class MeteorPlayer extends StatelessWidget {
   final bool isFirstRun;
   const MeteorPlayer({super.key, required this.isFirstRun});
+
 
   @override
   Widget build(BuildContext context) {

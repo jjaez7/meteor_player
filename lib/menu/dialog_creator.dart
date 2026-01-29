@@ -59,7 +59,7 @@ void showCreatorDialog(BuildContext context) {
                         children: [
                           Expanded(child: _buildCreatorCard("Jaewon Jo", "Main Dev", accentColor)),
                           const SizedBox(width: 12),
-                          Expanded(child: _buildCreatorCard("Minchan Kim", "UI/UX Design", accentColor)),
+                          Expanded(child: _buildCreatorCard("Minchan Kim", "Special Thanks", accentColor)),
                           const SizedBox(width: 12),
                           Expanded(child: _buildCreatorCard("Myungwan Jeong", "Special Thanks", accentColor)),
                         ],
@@ -68,7 +68,7 @@ void showCreatorDialog(BuildContext context) {
                         children: [
                           _buildCreatorRow("Jaewon Jo", "Main Developer", accentColor),
                           const SizedBox(height: 12),
-                          _buildCreatorRow("Minchan Kim", "UI/UX Design", accentColor),
+                          _buildCreatorRow("Minchan Kim", "Special Thanks To", accentColor),
                           const SizedBox(height: 12),
                           _buildCreatorRow("Myungwan Jeong", "Special Thanks To", accentColor),
                         ],

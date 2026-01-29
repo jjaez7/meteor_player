@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../main.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void showTermsDialog(BuildContext context) {
   final size = MediaQuery.of(context).size;
@@ -51,6 +52,8 @@ void showTermsDialog(BuildContext context) {
                             ),
                             const SizedBox(height: 24),
                             _buildAgreeButton(context, accentColor),
+                            const SizedBox(height: 8),
+                            _buildViewFullPolicyButton(),
                             const SizedBox(height: 16),
 
                             Opacity(
@@ -106,7 +109,9 @@ void showTermsDialog(BuildContext context) {
                       ),
                       const SizedBox(height: 20),
                       _buildTermsScrollArea(size, isLandscape),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 12),
+                      _buildViewFullPolicyButton(),
+                      const SizedBox(height: 12),
                       _buildAgreeButton(context, accentColor),
                       const SizedBox(height: 16), // 버튼과의 간격
 
@@ -155,6 +160,37 @@ Widget _buildHeaderIcon() {
       border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
     ),
     child: const Icon(Icons.security_rounded, color: Colors.white, size: 28),
+  );
+}
+
+// 전체 약관 보기 텍스트 버튼
+Widget _buildViewFullPolicyButton() {
+  return TextButton(
+    onPressed: () async {
+      final Uri url = Uri.parse('https://gist.github.com/jjaez7/77747922246eb6f6715f169ab55ec674');
+    try {
+    await launchUrl(
+      url,
+      mode: LaunchMode.externalApplication, // 외부 브라우저 강제 호출
+    );
+  } catch (e) {
+    debugPrint('Could not launch $url: $e');
+  }
+    },
+    style: TextButton.styleFrom(
+      minimumSize: Size.zero,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    child: Text(
+      "View Full Privacy Policy",
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.5),
+        fontSize: 11,
+        decoration: TextDecoration.underline, // 링크 느낌 강조
+        fontWeight: FontWeight.w400,
+      ),
+    ),
   );
 }
 

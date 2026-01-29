@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
 import 'main.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 
 class PermissionGuard extends StatefulWidget {
   final Widget child;
@@ -35,9 +37,20 @@ class PermissionGuardState extends State<PermissionGuard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _checkPermission(isInitial: true);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startLagDetection());
+    // 🚀 수정 1: 화면이 먼저 뜬 후, 1.5초 뒤에 권한을 체크합니다. (먹통 방지)
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _checkPermission(isInitial: true);
+      }
+    });
+
+    // 🚀 수정 2: 프레임 감지 로직도 UI가 완전히 안정된 후에 시작하도록 예약합니다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _startLagDetection();
+      }
+    });
   }
 
   // 🚀 프레임 드랍 감지 로직
@@ -102,24 +115,42 @@ class PermissionGuardState extends State<PermissionGuard>
 
   Future<void> _checkPermission({bool isInitial = false}) async {
     try {
-      final bool status =
+      // 초기 지연 (네이티브 안정화 대기)
+      //if (isInitial) await Future.delayed(const Duration(milliseconds: 500));
+
+      final bool notificationStatus =
           await NotificationListenerService.isPermissionGranted();
-      if (_isPermissionGranted != status) {
-        setState(() => _isPermissionGranted = status);
-        // 권한이 나중에 승인되었을 때도 안정화 로직이 돌아가도록 플래그만 초기화
-        if (status) {
-          _stableFrameCount = 0;
+
+      bool audioStatus = true;
+      if (Platform.isAndroid) {
+        // Android 13 이상은 audio, 이하는 storage 체크
+        if (await Permission.audio.isGranted ||
+            await Permission.storage.isGranted) {
+          audioStatus = true;
+        } else {
+          audioStatus = false;
         }
       }
-      // 🚩 여기서 기존의 Future.delayed(1초 뒤 알림) 부분은 지워주세요!
-      // 이제 _onFrame에서 프레임을 감시하다가 띄워줄 겁니다.
+
+      final bool totalStatus = notificationStatus && audioStatus;
+
+      if (mounted && _isPermissionGranted != totalStatus) {
+        setState(() {
+          _isPermissionGranted = totalStatus;
+        });
+      }
     } catch (e) {
-      debugPrint("Access Sync Error: $e");
+      // 에러 발생 시 앱이 튕기지 않도록 false 처리
+      if (mounted) setState(() => _isPermissionGranted = false);
     }
   }
 
   // ✨ 상단에서 내려오는 커스텀 글래스 알림 호출
-  void showTopStatusAlarm({bool isLag = false, int ms = 0, bool isSyncing = false}) {
+  void showTopStatusAlarm({
+    bool isLag = false,
+    int ms = 0,
+    bool isSyncing = false,
+  }) {
     if (!mounted) return;
 
     final overlay = Overlay.of(context);
@@ -190,7 +221,7 @@ class PermissionGuardState extends State<PermissionGuard>
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        "To sync the high-fidelity vinyl engine,\nplease enable Notification Access.",
+                        "To sync the high-fidelity vinyl engine,\nplease enable Audio and Notification Access.",
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
@@ -202,13 +233,28 @@ class PermissionGuardState extends State<PermissionGuard>
 
                       // --- 글래스모피즘 액션 버튼 ---
                       _buildGlassButton("GRANT ACCESS", () async {
-                        // 1. 설정 창 열기
-                        await NotificationListenerService.requestPermission();
+                        try {
+                          // 1. 알림 권한 설정창 열기 (사용자가 직접 허용해야 함)
+                          await NotificationListenerService.requestPermission();
 
-                        // 2. 사용자가 설정 마치고 돌아올 때를 대비해 살짝 지연 후 상태 체크
-                        Future.delayed(const Duration(milliseconds: 500), () {
-                          _checkPermission();
-                        });
+                          // 2. 혹시 미디어 권한이 여전히 없다면 여기서 한 번 더 요청 (안전장치)
+                          if (Platform.isAndroid) {
+                            await [
+                              Permission.audio,
+                              Permission.storage,
+                            ].request();
+                          }
+
+                          // 3. 사용자가 돌아오길 기다렸다가 상태 새로고침
+                          Future.delayed(
+                            const Duration(milliseconds: 1000),
+                            () {
+                              if (mounted) _checkPermission();
+                            },
+                          );
+                        } catch (e) {
+                          debugPrint("Grant Access Error: $e");
+                        }
                       }),
                     ],
                   ),

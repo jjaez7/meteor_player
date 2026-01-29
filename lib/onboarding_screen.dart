@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -98,7 +100,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
 
           // [3] 하단 네비게이션 (인디케이터 & 버튼)
-          Positioned(
+Positioned(
             bottom: isLandscape ? 30 : 60,
             left: 30,
             right: 30,
@@ -110,11 +112,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   isLastPage ? "START!" : "NEXT",
                   () async {
                     if (isLastPage) {
+                      // 🚀 1. 미디어 권한 요청 (시스템 팝업 실행)
+                      if (Platform.isAndroid) {
+                        try {
+                          // 오디오 권한과 저장소 권한을 동시에 요청
+                          await [
+                            Permission.audio,
+                            Permission.storage,
+                          ].request();
+                        } catch (e) {
+                          debugPrint("Permission request error: $e");
+                        }
+                      }
+
+                      // 🚀 2. 첫 실행 완료 플래그 저장
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('isFirstRun', false);
-                      if (!context.mounted) return;
-                      if (mounted) Navigator.pushReplacementNamed(context, '/main');
+
+                      // 🚀 3. 메인 화면으로 이동
+                      if (!mounted) return;
+                      Navigator.pushReplacementNamed(context, '/main');
                     } else {
+                      // 다음 온보딩 페이지로 이동
                       _controller.nextPage(
                         duration: const Duration(milliseconds: 800),
                         curve: Curves.easeOutQuart,
