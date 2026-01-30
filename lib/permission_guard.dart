@@ -26,6 +26,8 @@ class PermissionGuardState extends State<PermissionGuard>
   bool _hasShowBootAlarm = false; // 부팅 알림 중복 방지
   int _stableFrameCount = 0; // 연속 안정 프레임 카운트
 
+  DateTime? _lastBackPressTime;
+
   DateTime? _lastLagTime;
   final int _lagThresholdMs = 300;
 
@@ -150,6 +152,7 @@ class PermissionGuardState extends State<PermissionGuard>
     bool isLag = false,
     int ms = 0,
     bool isSyncing = false,
+    bool isExitWarning = false,
   }) {
     if (!mounted) return;
 
@@ -158,9 +161,12 @@ class PermissionGuardState extends State<PermissionGuard>
 
     overlayEntry = OverlayEntry(
       builder: (context) => _TopAlarmWidget(
-        accentColor: isLag ? Colors.orangeAccent : _accentColor,
+        accentColor: (isLag || isExitWarning)
+            ? Colors.orangeAccent
+            : _accentColor,
         isLag: isLag,
         isSyncing: isSyncing,
+        isExitWarning: isExitWarning,
         lagMs: ms,
         onDismiss: () => overlayEntry.remove(),
       ),
@@ -171,97 +177,117 @@ class PermissionGuardState extends State<PermissionGuard>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bgDark,
-      body: Stack(
-        children: [
-          // 배경: 메인 앱 콘텐츠
-          widget.child,
+    return PopScope(
+      canPop: false, // 시스템 수준의 뒤로가기 기본 동작을 막음
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
 
-          // [Permission Overlay] 권한 미승인 시 나타나는 글래스 레이어
-          if (!_isPermissionGranted)
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // --- 글로우 아이콘 쉴드 ---
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: _accentColor.withValues(alpha: 0.2),
-                              blurRadius: 40,
-                              spreadRadius: 5,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.lock_open_rounded,
-                          color: _accentColor,
-                          size: 40,
-                        ),
-                      ),
-                      const SizedBox(height: 50),
-                      const Text(
-                        "CORE ACCESS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "To sync the high-fidelity vinyl engine,\nplease enable Audio and Notification Access.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 14,
-                          height: 1.6,
-                        ),
-                      ),
-                      const SizedBox(height: 70),
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
 
-                      // --- 글래스모피즘 액션 버튼 ---
-                      _buildGlassButton("GRANT ACCESS", () async {
-                        try {
-                          // 1. 알림 권한 설정창 열기 (사용자가 직접 허용해야 함)
-                          await NotificationListenerService.requestPermission();
+          // 🚀 이제 isSyncing이 아니라 isExitWarning을 true로 보냅니다.
+          showTopStatusAlarm(isExitWarning: true);
 
-                          // 2. 혹시 미디어 권한이 여전히 없다면 여기서 한 번 더 요청 (안전장치)
-                          if (Platform.isAndroid) {
-                            await [
-                              Permission.audio,
-                              Permission.storage,
-                            ].request();
+          debugPrint("Meteor OS: Press back again to shutdown.");
+        } else {
+          exit(0);
+        }
+      },
+
+      child: Scaffold(
+        backgroundColor: _bgDark,
+        body: Stack(
+          children: [
+            // 배경: 메인 앱 콘텐츠
+            widget.child,
+
+            // [Permission Overlay] 권한 미승인 시 나타나는 글래스 레이어
+            if (!_isPermissionGranted)
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // --- 글로우 아이콘 쉴드 ---
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: _accentColor.withValues(alpha: 0.2),
+                                blurRadius: 40,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.lock_open_rounded,
+                            color: _accentColor,
+                            size: 40,
+                          ),
+                        ),
+                        const SizedBox(height: 50),
+                        const Text(
+                          "CORE ACCESS",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "To sync the high-fidelity vinyl engine,\nplease enable Audio and Notification Access.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 14,
+                            height: 1.6,
+                          ),
+                        ),
+                        const SizedBox(height: 70),
+
+                        // --- 글래스모피즘 액션 버튼 ---
+                        _buildGlassButton("GRANT ACCESS", () async {
+                          try {
+                            // 1. 알림 권한 설정창 열기 (사용자가 직접 허용해야 함)
+                            await NotificationListenerService.requestPermission();
+
+                            // 2. 혹시 미디어 권한이 여전히 없다면 여기서 한 번 더 요청 (안전장치)
+                            if (Platform.isAndroid) {
+                              await [
+                                Permission.audio,
+                                Permission.storage,
+                              ].request();
+                            }
+
+                            // 3. 사용자가 돌아오길 기다렸다가 상태 새로고침
+                            Future.delayed(
+                              const Duration(milliseconds: 1000),
+                              () {
+                                if (mounted) _checkPermission();
+                              },
+                            );
+                          } catch (e) {
+                            debugPrint("Grant Access Error: $e");
                           }
-
-                          // 3. 사용자가 돌아오길 기다렸다가 상태 새로고침
-                          Future.delayed(
-                            const Duration(milliseconds: 1000),
-                            () {
-                              if (mounted) _checkPermission();
-                            },
-                          );
-                        } catch (e) {
-                          debugPrint("Grant Access Error: $e");
-                        }
-                      }),
-                    ],
+                        }),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -305,6 +331,7 @@ class _TopAlarmWidget extends StatefulWidget {
   final bool isLag;
   final int lagMs;
   final bool isSyncing;
+  final bool isExitWarning;
 
   const _TopAlarmWidget({
     required this.accentColor,
@@ -312,6 +339,7 @@ class _TopAlarmWidget extends StatefulWidget {
     this.isLag = false,
     this.lagMs = 0,
     this.isSyncing = false,
+    this.isExitWarning = false,
   });
 
   @override
@@ -378,7 +406,13 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
     final bool isSmallScreen = screenHeight < 500;
 
     String label;
-    if (widget.isSyncing) {
+    if (widget.isExitWarning) {
+      // 🚀 뒤로가기 경고 전용 (isExitWarning이 true일 때)
+      label = _showVersion
+          ? "PRESS BACK AGAIN TO SHUTDOWN"
+          : "SYSTEM EXIT RESTRICTED";
+    } else if (widget.isSyncing) {
+      // ✅ 기존에 찾으시던 로직 그대로 유지!
       label = _showVersion
           ? "METEOR ENGINE STABILIZED"
           : "SYSTEM RE-SYNCING...";
@@ -431,12 +465,16 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          widget.isSyncing
+                          widget.isExitWarning
                               ? Icons
-                                    .sync_problem_rounded // 혹은 Icons.refresh_rounded
-                              : (widget.isLag
-                                    ? Icons.bolt_rounded
-                                    : Icons.auto_awesome),
+                                    .warning_amber_rounded // 1. 종료 경고일 때 아이콘
+                              : (widget.isSyncing
+                                    ? Icons
+                                          .sync_problem_rounded // 2. 기존 싱크 중일 때 아이콘
+                                    : (widget.isLag
+                                          ? Icons
+                                                .bolt_rounded // 3. 렉 걸렸을 때 아이콘
+                                          : Icons.auto_awesome)), // 4. 기본 아이콘
                           color: widget.accentColor,
                           size: isSmallScreen ? 14 : 18, // 아이콘 크기 조절
                         ),
