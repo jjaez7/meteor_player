@@ -51,7 +51,9 @@ class MarqueeTitleWidget extends StatelessWidget {
     // 🚀 핵심 로직: LayoutBuilder를 통해 부모가 준 width 안에서 글자가 넘치는지 판단
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double maxWidth = width ?? constraints.maxWidth;
+        final double availableWidth = (constraints.maxWidth == double.infinity || constraints.maxWidth <= 0)
+        ? MediaQuery.of(context).size.width * 0.8 // 최소한의 방어선
+        : constraints.maxWidth;
 
         // 글자의 실제 가로 길이를 미리 계산
         final textPainter = TextPainter(
@@ -61,7 +63,7 @@ class MarqueeTitleWidget extends StatelessWidget {
         )..layout();
 
         // 넘칠 때만 Marquee 실행, 아니면 일반 Text 반환
-        if (textPainter.width > maxWidth) {
+        if (textPainter.width > (availableWidth + 1.2)) {
           return SizedBox(
             height: fontSize * 1.5,
             child: Marquee(
@@ -81,6 +83,7 @@ class MarqueeTitleWidget extends StatelessWidget {
             style: textStyle,
             maxLines: 1,
             overflow: TextOverflow.visible,
+            softWrap: false,
           );
         }
       },
