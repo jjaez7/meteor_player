@@ -266,26 +266,13 @@ class PlayButtonsWidget extends StatelessWidget {
     required this.activeColor,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildSideBtn(Icons.skip_previous_rounded, onPrevious),
-          GestureDetector(
-            onTap: onTogglePlay, 
-            child: _buildMainPlayBtn(),
-          ),
-          _buildSideBtn(Icons.skip_next_rounded, onNext),
-        ],
-      ),
-    );
-  }
+
 
   // 1. 사이드 버튼 (이전/다음): 극도로 미니멀한 투명 유리 느낌
-  Widget _buildSideBtn(IconData icon, VoidCallback onTap) {
+static Widget buildSideBtn({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -293,62 +280,91 @@ class PlayButtonsWidget extends StatelessWidget {
         height: 55,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          // 🚀 소프트 레이어: 아주 연한 화이트 오버레이
-          color: Colors.white.withValues(alpha: 0.1), 
+          color: Colors.white.withValues(alpha: 0.1),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.15), // 유리의 엣지 효과
+            color: Colors.white.withValues(alpha: 0.15),
             width: 1.5,
           ),
         ),
         child: Icon(
-          icon, 
-          size: 30, 
-          color: Colors.white.withValues(alpha: 0.9), // 메인 텍스트와 통일감
+          icon,
+          size: 30,
+          color: Colors.white.withValues(alpha: 0.9),
         ),
       ),
     );
   }
 
-  // 2. 메인 버튼 (재생/정지): 빛을 머금은 하이라이트 레이어
-  Widget _buildMainPlayBtn() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: 80, // 약간 더 키워 강조
-      height: 80,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        // 🚀 글래스모피즘 핵심: 배경이 비치는 화이트
-        color: isPlaying 
-            ? Colors.white.withValues(alpha: 0.25) 
-            : Colors.white.withValues(alpha: 0.15),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.3),
-          width: 2,
-        ),
-        boxShadow: [
-          // 하단으로 퍼지는 부드러운 안개 그림자
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+  // 2. 메인 재생 버튼: 디자인 로직
+  static Widget buildMainPlayBtn({
+    required bool isPlaying,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isPlaying
+              ? Colors.white.withValues(alpha: 0.25)
+              : Colors.white.withValues(alpha: 0.15),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+            width: 2,
           ),
-          // 버튼 자체가 빛나는 느낌 (Glow)
-          if (isPlaying)
+          boxShadow: [
             BoxShadow(
-              color: activeColor.withValues(alpha: 0.3),
-              blurRadius: 25,
-              spreadRadius: 2,
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
-        ],
-      ),
-      child: Center(
-        child: Icon(
-          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-          size: 45,
-          // 재생 중일 때는 포인트 컬러, 아니면 화이트
-          color: isPlaying ? activeColor : Colors.white,
+            if (isPlaying)
+              BoxShadow(
+                color: activeColor.withValues(alpha: 0.3),
+                blurRadius: 25,
+                spreadRadius: 2,
+              ),
+          ],
+        ),
+        child: Center(
+          child: Icon(
+            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 45,
+            color: isPlaying ? activeColor : Colors.white,
+          ),
         ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    // 💡 에러 해결: 호출 시 명명된 매개변수(icon:, onTap: 등)를 정확히 작성했습니다.
+    return SizedBox(
+      width: width,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          buildSideBtn(
+            icon: Icons.skip_previous_rounded, 
+            onTap: onPrevious,
+          ),
+          buildMainPlayBtn(
+            isPlaying: isPlaying, 
+            activeColor: activeColor, 
+            onTap: onTogglePlay,
+          ),
+          buildSideBtn(
+            icon: Icons.skip_next_rounded, 
+            onTap: onNext,
+          ),
+        ],
+      ),
+    );
+  }
+
 }

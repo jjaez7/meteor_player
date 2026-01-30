@@ -45,11 +45,16 @@ class LayoutEngine {
         needlePos: const Offset(-500, -500),
         progressBarPos: const Offset(-500, -500),
         playButtonsPos: const Offset(-500, -500),
+        prevButtonPos: const Offset(-500, -500),
+        nextButtonPos: const Offset(-500, -500),
+
       );
     } else if (isLandscape) {
       // --- [가로 모드] 기존 디자인 유지 ---
       double lpSize = size.height * 0.75;
       double progressBarWidth = size.width * 0.35;
+      double pbPosMidX = size.width * 0.7;
+      double pbPosMidY = size.height * 0.8;
 
       return PlayerConfig(
         lpSize: lpSize,
@@ -67,12 +72,16 @@ class LayoutEngine {
           size.height * 0.25 + (size.height * 0.08),
         ),
         progressBarPos: Offset(size.width * 0.7, size.height * 0.55),
-        playButtonsPos: Offset(size.width * 0.7, size.height * 0.8),
+        playButtonsPos: Offset(pbPosMidX, pbPosMidY),
+        prevButtonPos: Offset(pbPosMidX - 80, pbPosMidY),
+        nextButtonPos: Offset(pbPosMidX + 80, pbPosMidY),
       );
     }
     // 🚀 [추가] 플립 커버 전용 레이아웃 분기
     else if (isFlipCover) {
       double lpSize = size.height * 0.82;
+      double pbPosMidX = size.width * 0.72;
+      double pbPosMidY = size.height * 0.86;
 
       return PlayerConfig(
         lpSize: lpSize,
@@ -87,12 +96,16 @@ class LayoutEngine {
         titlePos: Offset(size.width * 0.72, size.height * 0.28),
         artistPos: Offset(size.width * 0.72, size.height * 0.45),
         progressBarPos: Offset(size.width * 0.72, size.height * 0.68),
-        playButtonsPos: Offset(size.width * 0.72, size.height * 0.86),
+        playButtonsPos: Offset(pbPosMidX, pbPosMidY),
+        prevButtonPos: Offset(pbPosMidX - 70, pbPosMidY),
+        nextButtonPos: Offset(pbPosMidX + 70, pbPosMidY),
         needlePos: const Offset(-500, -500),
       );
     } else {
       // --- [세로 모드] 기존 감성 우측 배치 유지 ---
       double lpSize = size.width * 0.82;
+      double pbPosMidX = size.width * 0.5;
+      double pbPosMidY = size.height * 0.88;
 
       return PlayerConfig(
         lpSize: lpSize,
@@ -110,7 +123,9 @@ class LayoutEngine {
           size.height * 0.65 + (size.height * 0.06),
         ),
         progressBarPos: Offset(size.width * 0.5, size.height * 0.78),
-        playButtonsPos: Offset(size.width * 0.5, size.height * 0.88),
+        playButtonsPos: Offset(pbPosMidX, pbPosMidY),
+        prevButtonPos: Offset(pbPosMidX - 80, pbPosMidY),
+        nextButtonPos: Offset(pbPosMidX + 80, pbPosMidY),
       );
     }
   }

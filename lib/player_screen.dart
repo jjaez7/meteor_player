@@ -738,31 +738,41 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       ),
 
                       // --- 재생 버튼 (유지) ---
+                      // --- 1. 이전 곡 버튼 ---
+                      _buildEdit(
+                        config
+                            .prevButtonPos, // config에 개별 위치 변수가 있다고 가정 (없으면 생성 필요)
+                        60, // 버튼 크기에 맞춘 너비
+                        60, // 버튼 크기에 맞춘 높이
+                        (d) => config.prevButtonPos += d,
+                        (s) => {}, // 개별 버튼은 크기 조절 제외하거나 필요시 추가
+                        PlayButtonsWidget.buildSideBtn(
+                          icon: Icons.skip_previous_rounded,
+                          onTap: PlayerLogic.skipPrevious,
+                        ),
+                      ),
+
+                      // --- 2. 재생/일시정지 버튼 (메인) ---
                       _buildEdit(
                         config.playButtonsPos,
-                        config.playButtonsWidth,
-                        100,
+                        90, // 메인 버튼 크기
+                        90,
                         (d) => config.playButtonsPos += d,
-                        (s) => config.playButtonsWidth =
-                            (config.playButtonsWidth + s).clamp(200.0, 500.0),
-                        PlayButtonsWidget(
+                        (s) => {},
+                        PlayButtonsWidget.buildMainPlayBtn(
                           isPlaying: _isPlaying,
-                          onTogglePlay: () {
-                            // 1. Logic 클래스를 통해 네이티브에 재생/일시정지 명령 전달
+                          activeColor: _barColor,
+                          onTap: () {
                             PlayerLogic.togglePlay(
                               isPlaying: _isPlaying,
                               onToggle: () {
-                                // 2. 네이티브 명령이 성공적으로 전달되면 UI와 애니메이션을 즉시 업데이트
                                 if (mounted) {
                                   setState(() {
-                                    _isPlaying = !_isPlaying; // 현재 상태 반전
-
+                                    _isPlaying = !_isPlaying;
                                     if (_isPlaying) {
-                                      // 재생 시작 시: LP 무한 회전, 바늘 내리기
                                       _lpController.repeat();
                                       _needleController.forward();
                                     } else {
-                                      // 정지 시: LP 정지, 바늘 올리기
                                       _lpController.stop();
                                       _needleController.reverse();
                                     }
@@ -771,12 +781,19 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               },
                             );
                           },
-                          onNext: PlayerLogic.skipNext,
-                          onPrevious: PlayerLogic.skipPrevious,
-                          width: config.playButtonsWidth,
-                          bgColor: _bgColor,
-                          textColor: _textColor,
-                          activeColor: _barColor,
+                        ),
+                      ),
+
+                      // --- 3. 다음 곡 버튼 ---
+                      _buildEdit(
+                        config.nextButtonPos, // config에 개별 위치 변수가 있다고 가정
+                        60,
+                        60,
+                        (d) => config.nextButtonPos += d,
+                        (s) => {},
+                        PlayButtonsWidget.buildSideBtn(
+                          icon: Icons.skip_next_rounded,
+                          onTap: PlayerLogic.skipNext,
                         ),
                       ),
                     ],
