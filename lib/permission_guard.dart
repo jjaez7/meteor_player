@@ -112,6 +112,8 @@ class PermissionGuardState extends State<PermissionGuard>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPermission();
+
+      audioHandler.refreshMetadata();
     }
   }
 

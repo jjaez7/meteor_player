@@ -141,6 +141,32 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       duration: const Duration(milliseconds: 1000),
     );
 
+    audioHandler.playbackState.listen((state) {
+      if (!mounted) return;
+
+      if (state.playing) {
+        // 재생 중 신호가 오면 바늘 내림
+        if (_needleController.status != AnimationStatus.forward &&
+            _needleController.value < 1.0) {
+          _needleController.forward();
+        }
+        if (!_lpController.isAnimating) _lpController.repeat();
+      } else {
+        // 멈춤 신호가 오면 바늘 올림 (이게 해결 핵심!)
+        if (_needleController.status != AnimationStatus.reverse &&
+            _needleController.value > 0.0) {
+          _needleController.reverse();
+        }
+
+        // LP는 바늘이 올라가기 시작한 뒤 약간 뒤에 멈춤
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !audioHandler.playbackState.value.playing) {
+            _lpController.stop();
+          }
+        });
+      }
+    });
+
     // 2. 가벼운 데이터(색상) 먼저 로드
     _loadSavedColors();
 
@@ -180,30 +206,29 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     );
   }
 
-void _handleManualRefresh() async {
-  final now = DateTime.now();
+  void _handleManualRefresh() async {
+    final now = DateTime.now();
 
-  if (_lastSyncTime != null && 
-      now.difference(_lastSyncTime!) < const Duration(seconds: 10)) {
-    
-    await HapticFeedback.selectionClick(); 
-    
-    return; 
+    if (_lastSyncTime != null &&
+        now.difference(_lastSyncTime!) < const Duration(seconds: 10)) {
+      await HapticFeedback.selectionClick();
+
+      return;
+    }
+
+    _lastSyncTime = now;
+    await HapticFeedback.heavyImpact();
+
+    permissionGuardKey.currentState?.showTopStatusAlarm(isSyncing: true);
+
+    try {
+      await audioHandler.refreshMetadata();
+      await _fetchInitialStatus();
+    } catch (e) {
+      debugPrint("Sync Error: $e");
+      _lastSyncTime = null;
+    }
   }
-
-  _lastSyncTime = now;
-  await HapticFeedback.heavyImpact();
-  
-  permissionGuardKey.currentState?.showTopStatusAlarm(isSyncing: true); 
-
-  try {
-    await audioHandler.refreshMetadata(); 
-    await _fetchInitialStatus();
-  } catch (e) {
-    debugPrint("Sync Error: $e");
-    _lastSyncTime = null; 
-  }
-}
 
   @override
   void dispose() {
@@ -325,7 +350,7 @@ void _handleManualRefresh() async {
 
     try {
       if (data is Map) {
-        incomingPlayingState = data['isPlaying'] ?? _isPlaying;
+        incomingPlayingState = data['isPlaying'] ?? false;
       } else if (data is String) {
         incomingPlayingState = (data == 'playing');
       } else if (data is bool) {
@@ -335,28 +360,27 @@ void _handleManualRefresh() async {
       debugPrint("Media status parsing error: $e");
     }
 
-    // 🚀 [핵심 수정]
-    // 다른 앱에서 멈췄을 때(false가 들어왔을 때) 확실히 멈추도록 강제 제어합니다.
+    // 상태가 변했을 때만 처리
     if (_isPlaying != incomingPlayingState) {
       setState(() {
         _isPlaying = incomingPlayingState;
       });
 
       if (_isPlaying) {
-        // 재생 상태로 변함 -> 바늘 내리고 LP 돌리기
-        if (!_lpController.isAnimating) {
-          _lpController.repeat();
-        }
-        _needleController.forward();
+        // [재생 시작]
+        if (!_lpController.isAnimating) _lpController.repeat();
+        _needleController.forward(); // 바늘 내리기 (0.0 -> 1.0)
         HapticFeedback.lightImpact();
       } else {
-        // 정지 상태로 변함 -> 바늘 올리고 LP 멈추기
-        _needleController.reverse();
+        // [정지 발생] 🚀 이 부분이 바늘 동작의 핵심입니다.
 
-        // 바늘이 올라가는 애니메이션 시간(약 200~300ms) 동안은 LP가 돌다가 멈추는 게 자연스러움
-        Future.delayed(const Duration(milliseconds: 300), () {
+        // 1. 바늘 먼저 즉시 올리기
+        _needleController.reverse(); // 바늘 올리기 (1.0 -> 0.0)
+
+        // 2. 바늘이 완전히 올라가는 시간(약 500ms) 동안은 LP가 도는 게 자연스러움
+        Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted && !_isPlaying) {
-            _lpController.stop(); // 👈 여기서 확실히 멈춤
+            _lpController.stop(); // LP 정지
           }
         });
         HapticFeedback.mediumImpact();
@@ -391,9 +415,21 @@ void _handleManualRefresh() async {
 
         // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
         if (_isPlaying) {
-          // 즉시 실행하되 UI가 끊기지 않도록 컨트롤
           if (!_lpController.isAnimating) _lpController.repeat();
-          _needleController.forward();
+          // value = 1.0; 대신 아래처럼 쓰면 슥~ 내려갑니다.
+          _needleController.animateTo(
+            1.0,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _lpController.stop();
+          // 즉시 0.0으로 두지 않고 슥~ 올라가게 합니다.
+          _needleController.animateTo(
+            0.0,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOut,
+          );
         }
 
         // 🚀 [개선 3] 무거운 데이터(이미지 및 색상 추출)는 비동기로 처리
@@ -599,6 +635,7 @@ void _handleManualRefresh() async {
                               title: _currentTitle,
                               artist: _currentArtist,
                               lpController: _lpController,
+                              isPlaying: _isPlaying,
                               onToggleMode: () => setState(
                                 () => _isMinimalMode = !_isMinimalMode,
                               ),

@@ -9,6 +9,7 @@ class ClassicVinylView extends StatelessWidget {
   final String title;
   final String artist;
   final AnimationController lpController;
+  final bool isPlaying;
   final VoidCallback onToggleMode;
 
   const ClassicVinylView({
@@ -20,20 +21,23 @@ class ClassicVinylView extends StatelessWidget {
     required this.artist,
     required this.lpController,
     required this.onToggleMode,
+    required this.isPlaying,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (isPlaying) {
+      if (!lpController.isAnimating) lpController.repeat();
+    } else {
+      lpController.stop();
+    }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
       switchInCurve: Curves.easeOutBack,
       switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, animation) => FadeTransition(
         opacity: animation,
-        child: ScaleTransition(
-          scale: animation,
-          child: child,
-        ),
+        child: ScaleTransition(scale: animation, child: child),
       ),
       // 🚀 핵심: 모드 전환 시 위젯을 완전히 새로 그리지 않도록 키 관리
       child: isMinimalMode ? _buildMinimalArt() : _buildVinylDisk(),
@@ -41,7 +45,7 @@ class ClassicVinylView extends StatelessWidget {
   }
 
   // --- 1. LP판 빌더 (렉 최적화) ---
-Widget _buildVinylDisk() {
+  Widget _buildVinylDisk() {
     return GestureDetector(
       key: const ValueKey('vinyl_disk'),
       onDoubleTap: () {
@@ -54,7 +58,7 @@ Widget _buildVinylDisk() {
           turns: lpController,
           child: VinylDisk(
             // 🚀 에러 해결: VinylDisk가 요구하는 controller를 전달합니다.
-            controller: lpController, 
+            controller: lpController,
             size: size,
             albumArtBytes: albumArtBytes,
             title: title,
@@ -68,7 +72,7 @@ Widget _buildVinylDisk() {
   // --- 2. 미니멀 모드 빌더 (고화질 최적화) ---
   Widget _buildMinimalArt() {
     final double responsiveRadius = size * 0.12;
-    
+
     return GestureDetector(
       key: const ValueKey('minimal_art'),
       onDoubleTap: () {
@@ -96,10 +100,10 @@ Widget _buildVinylDisk() {
                   fit: BoxFit.cover,
                   // 🚀 [화질 개선 핵심]
                   // 1. FilterQuality를 high로 설정하여 업스케일링 시 깨짐 방지
-                  filterQuality: FilterQuality.medium, 
+                  filterQuality: FilterQuality.medium,
                   // 2. 캐시 사이즈를 null로 두어 원본 해상도 그대로 사용
-                cacheWidth: (size * 2).toInt(), 
-                cacheHeight: (size * 2).toInt(),
+                  cacheWidth: (size * 2).toInt(),
+                  cacheHeight: (size * 2).toInt(),
                   // 3. 이미지 전환 시 부드럽게 유지
                   gaplessPlayback: true,
                   isAntiAlias: false,

@@ -244,7 +244,16 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                     "artist" to (metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "Unknown Artist"),
                     "albumArt" to (albumArtBytes ?: ByteArray(0))
                 )
-            } else null
+            } else {
+                mutableMapOf<String, Any>(
+                    "position" to 0L,
+                    "duration" to 0L,
+                    "isPlaying" to false, // 엔진을 멈추게 함
+                    "title" to "Ready to Play",
+                    "artist" to "METEOR PLAYER",
+                    "albumArt" to ByteArray(0)
+                )
+            }
         } catch (e: Exception) { null }
     }
 
