@@ -21,7 +21,7 @@ class NeedleWidget extends AnimatedWidget {
   Widget build(BuildContext context) {
     // value가 0일 때(정지): 1.2 (바깥쪽)
     // value가 1일 때(재생): 0.7 (안쪽)
-    final double angle = 1.2 - (_controller.value * 0.5);
+    final double angle = 1.4 - (_controller.value * 0.7);
 
     return Stack(
       clipBehavior: Clip.none,
