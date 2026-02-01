@@ -19,11 +19,28 @@ class LyricsService {
   /// 가사 데이터를 가져오는 메인 함수
   static Future<LyricResult> getLyrics(String title, String artist) async {
     // 1. 서비스 진입 로그
-    debugPrint("🔍 [LyricsService] 요청 시작: $title / $artist");
+    debugPrint("🔍 [LyricsService] Raw Request: $title / $artist");
 
-    // 2. 검색어 정제 (괄호 제거 등)
-    final cleanTitle = title.split('(')[0].split('-')[0].split('[')[0].trim();
+    // 2. 검색어 강화 정제 로직
+    String cleanTitle = title;
+
+    // 괄호()나 대괄호[] 안에 '특정 키워드'가 포함된 경우만 해당 괄호 덩어리 삭제
+    // 키워드: official, video, mv, audio, music, edit, prod, feat, ft, version, lyrics 등
+    final junkPattern = RegExp(
+      r'[\(\[][^\]\)]*(?:official|video|mv|audio|music|edit|prod|feat|ft|version|lyrics|radio)[^\]\)]*[\)\]]', 
+      caseSensitive: false
+    );
+    cleanTitle = cleanTitle.replaceAll(junkPattern, '').trim();
+
+    // 만약 "Title - Artist" 형태로 들어오는 경우 대시(-) 뒤를 제거 (필요시)
+    if (cleanTitle.contains(' - ')) {
+      cleanTitle = cleanTitle.split(' - ')[0].trim();
+    }
+
+    // 아티스트 정제
     final cleanArtist = (artist == "Unknown" || artist == "알 수 없는 아티스트") ? "" : artist;
+
+    debugPrint("✨ [LyricsService] Cleaned: '$cleanTitle' by '$cleanArtist'");
 
     final url = Uri.parse(
       'https://lrclib.net/api/get?artist_name=${Uri.encodeComponent(cleanArtist)}&track_name=${Uri.encodeComponent(cleanTitle)}'
