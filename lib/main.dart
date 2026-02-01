@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mp_design/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
+import 'services/lyrics_service.dart';
+import 'models/lyric_model.dart';
 
 
 String appVersion="1.0.0";
@@ -64,6 +66,12 @@ class MyAudioHandler extends BaseAudioHandler {
     'com.meteor.player/media_status',
   );
 
+  List<LyricLine> currentLyrics = [];
+  Stream<Duration> get position => playbackState.map((state) => state.updatePosition).distinct();
+  
+  // (옵션) 전체 길이 스트림도 있으면 편합니다.
+  Stream<Duration> get duration => mediaItem.map((item) => item?.duration ?? Duration.zero).distinct();
+  
   MyAudioHandler() {
     // 초기 상태 설정
     playbackState.add(
@@ -85,10 +93,11 @@ class MyAudioHandler extends BaseAudioHandler {
     );
 
     // 🚀 네이티브 스트림 최적화
-    _statusChannel.receiveBroadcastStream().listen((data) {
+    _statusChannel.receiveBroadcastStream().listen((data) async{
       final mediaData = Map<String, dynamic>.from(data);
       final bool isPlaying = mediaData['isPlaying'] ?? false;
       final String newTitle = mediaData['title'] ?? 'Unknown';
+      final String newArtist = mediaData['artist'] ?? 'Unknown';
 
       // 1. 재생 상태 업데이트 (포지션 정보는 자주 바뀌어도 됨)
       playbackState.add(
@@ -113,6 +122,7 @@ class MyAudioHandler extends BaseAudioHandler {
             duration: Duration(milliseconds: mediaData['duration'] as int),
           ),
         );
+        _updateLyrics(newTitle, newArtist);
       }
     });
   }
@@ -122,6 +132,20 @@ class MyAudioHandler extends BaseAudioHandler {
       await _nativeChannel.invokeMethod('sendMediaKey', {'keyCode': keyCode});
     } catch (e) {
       debugPrint("Native Bridge Error: $e");
+    }
+  }
+
+  Future<void> _updateLyrics(String title, String artist) async {
+    try {
+      final result = await LyricsService.getLyrics(title, artist);
+      currentLyrics = result.lyrics;
+      
+      // UI에 가사가 업데이트되었음을 알리기 위해 
+      // 필요하다면 가사 전용 Stream을 만들거나 mediaItem을 다시 한번 쏴줄 수 있습니다.
+      debugPrint("✅ Lyrics loaded: ${currentLyrics.length} lines (Status: ${result.status.name})");
+    } catch (e) {
+      debugPrint("🚨 Lyrics Update Error: $e");
+      currentLyrics = [];
     }
   }
 

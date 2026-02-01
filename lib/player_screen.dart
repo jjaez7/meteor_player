@@ -20,6 +20,7 @@ import 'widgets/stream_progress_bar.dart';
 import 'dart:ui';
 import 'features/screen_lock.dart';
 //import 'features/pip_handler.dart';
+import 'services/lyrics_service.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -30,6 +31,7 @@ class VinylPlayerScreen extends StatefulWidget {
 class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isMinimalMode = false;
+  bool _showLyrics = false;
   bool _isPipMode = false;
 
   bool _isScreenLocked = false;
@@ -81,6 +83,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   String _currentTitle = "Ready to Play";
   String _currentArtist = "METEOR PLAYER";
   Uint8List? _albumArtBytes;
+
+  List<dynamic> _lyrics = [];
+  Duration _position = Duration.zero;
 
   // 기본 테마 색상 설정
   Color _bgColor = const Color(0xFFE1E0E5);
@@ -140,6 +145,23 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
+
+    // 1. 재생 위치 리스너
+    audioHandler.position.listen((pos) {
+      if (mounted) setState(() => _position = pos);
+    });
+
+    // 2. 가사 로딩 및 곡 변경 리스너 (해결 핵심)
+    audioHandler.mediaItem.listen((item) {
+      if (item != null && mounted) {
+        setState(() {
+          _currentTitle = item.title;
+          _currentArtist = (item.artist ?? "Unknown").toUpperCase();
+          _lyrics = []; // 🚀 중요: 새 곡이 나오면 가사 리스트를 비워줍니다. (로딩은 아직 안 함)
+          _lastFetchedSongId = ""; // 로딩 기록 초기화
+        });
+      }
+    });
 
     audioHandler.playbackState.listen((state) {
       if (!mounted) return;
@@ -205,6 +227,55 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       },
     );
   }
+
+LyricStatus _currentStatus = LyricStatus.loading;
+  String _lastFetchedSongId = "";
+Future<void> _updateLyrics(dynamic item) async {
+  String title;
+  String artist;
+
+  if (item is Map) {
+    title = item['title']?.toString() ?? "Unknown";
+    artist = item['artist']?.toString() ?? "Unknown";
+  } else {
+    title = item.title ?? "Unknown";
+    artist = item.artist ?? "Unknown";
+  }
+
+  final String currentId = "${title}_$artist";
+
+  // 이미 같은 곡의 가사를 가져왔다면 중단
+  if (_lastFetchedSongId == currentId) return;
+  _lastFetchedSongId = currentId;
+
+  debugPrint("🎵 가사 업데이트 시도: $title");
+
+  // 가사 초기화 및 로딩 상태로 변경
+  if (mounted) {
+    setState(() {
+      _lyrics = [];
+      _currentStatus = LyricStatus.loading; // 🚀 로딩 상태 시작
+    });
+  }
+
+  try {
+    // 🚀 수정된 부분: result.lyrics와 result.status를 받아옵니다.
+    final result = await LyricsService.getLyrics(title, artist);
+
+    if (mounted && _lastFetchedSongId == currentId) {
+      setState(() {
+        _lyrics = result.lyrics; // 가사 리스트 저장
+        _currentStatus = result.status; // 🚀 서버에서 받은 실제 상태(success, noLyrics 등) 저장
+      });
+      debugPrint("✅ 가사 결과 상태: ${result.status.name}, ${result.lyrics.length}줄");
+    }
+  } catch (e) {
+    debugPrint("🚨 가사 로딩 실패 (심각한 에러): $e");
+    if (mounted) {
+      setState(() => _currentStatus = LyricStatus.networkError);
+    }
+  }
+}
 
   void _handleManualRefresh() async {
     final now = DateTime.now();
@@ -287,13 +358,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
       if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
         // 제목이 같고 아티스트가 유효하면 불필요한 리빌드 방지
-        if (_currentTitle == event.title &&
-            _currentArtist != "UNKNOWN" &&
-            _currentArtist != "Unknown") {
-          return;
-        }
-
-        //Uint8List? art = event.largeIcon ?? event.appIcon;
+        if (_currentTitle == event.title) {
+      return; 
+    }
 
         if (!mounted) return;
 
@@ -301,9 +368,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         setState(() {
           _currentTitle = event.title!;
           _currentArtist = (event.content ?? "Unknown").toUpperCase();
-          /*if (art != null) {
-            _albumArtBytes = art;
-          }*/
+          _lyrics = [];
+          _lastFetchedSongId = "";
           _isPlaying = true;
         });
 
@@ -609,7 +675,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       // --- LP판 & 앨범 표지 전환부 ---
                       _buildEdit(
                         Offset(
-                          _isMinimalMode
+                          (_isMinimalMode || _showLyrics)
                               ? (isPortrait
                                     ? size.width / 2
                                     : size.width * 0.25)
@@ -629,7 +695,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           child: GestureDetector(
                             onLongPress: _handleManualRefresh,
                             child: ClassicVinylView(
+                              lyricStatus: _currentStatus,
+                              lyrics: _lyrics, // 현재 불러온 가사 리스트
+                              currentPosition: _position, // 오디오 플레이어의 현재 시간
                               isMinimalMode: _isMinimalMode,
+                              isLyricsMode: _showLyrics,
                               size: config.lpSize,
                               albumArtBytes: _albumArtBytes,
                               title: _currentTitle,
@@ -639,13 +709,29 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               onToggleMode: () => setState(
                                 () => _isMinimalMode = !_isMinimalMode,
                               ),
+                              onShowLyrics: () async {
+                                // 1. 화면을 먼저 가사 모드로 전환 (유리창 띄우기)
+                                setState(() => _showLyrics = true);
+
+                                // 2. 가사가 비어있을 때만 데이터를 가져옵니다.
+                                if (_lyrics.isEmpty) {
+                                  // 이미 만들어두신 _updateLyrics 함수를 재활용하거나 직접 호출합니다.
+                                  // 현재 곡 정보를 담은 가상의 객체를 만들어서 넘겨줍니다.
+                                  await _updateLyrics({
+                                    'title': _currentTitle,
+                                    'artist': _currentArtist,
+                                  });
+                                }
+                              },
+                              onCloseLyrics: () =>
+                                  setState(() => _showLyrics = false), // 가사 끄기
                             ),
                           ),
                         ),
                       ),
 
                       // --- 바늘 (LP 모드일 때만 표시) ---
-                      if (!_isMinimalMode)
+                      if (!_isMinimalMode && !_showLyrics)
                         _buildEdit(
                           config.needlePos,
                           160,
@@ -833,6 +919,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       ),
                     ),
                   ),
+
                 if (_isScreenLocked)
                   Positioned.fill(
                     child: ScreenLockOverlay(
