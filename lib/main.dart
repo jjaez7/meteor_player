@@ -98,15 +98,21 @@ class MyAudioHandler extends BaseAudioHandler {
       final bool isPlaying = mediaData['isPlaying'] ?? false;
       final String newTitle = mediaData['title'] ?? 'Unknown';
       final String newArtist = mediaData['artist'] ?? 'Unknown';
+      final int incomingPos = mediaData['position'] as int;
+
+      // 🚀 [수정 핵심] 시스템이 보내는 0초 데이터를 방어합니다.
+      // 재생 중인데 갑자기 0이 들어오면 무시하고 리턴합니다.
+      if (isPlaying && incomingPos <= 0) {
+        // debugPrint("🚫 핸들러: 시스템의 잘못된 0초 신호 차단");
+        return; // 이 신호는 무시하고 다음 신호를 기다립니다.
+      }
 
       // 1. 재생 상태 업데이트 (포지션 정보는 자주 바뀌어도 됨)
       playbackState.add(
         playbackState.value.copyWith(
           playing: isPlaying,
-          updatePosition: Duration(milliseconds: mediaData['position'] as int),
-          bufferedPosition: Duration(
-            milliseconds: mediaData['position'] as int,
-          ),
+          updatePosition: Duration(milliseconds: incomingPos),
+          bufferedPosition: Duration(milliseconds: incomingPos),
           speed: isPlaying ? 1.0 : 0.0,
         ),
       );
@@ -118,7 +124,7 @@ class MyAudioHandler extends BaseAudioHandler {
             id: 'external_media',
             album: 'External Player',
             title: newTitle,
-            artist: mediaData['artist'] ?? 'Unknown',
+            artist: newArtist,
             duration: Duration(milliseconds: mediaData['duration'] as int),
           ),
         );

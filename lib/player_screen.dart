@@ -21,6 +21,7 @@ import 'dart:ui';
 import 'features/screen_lock.dart';
 //import 'features/pip_handler.dart';
 import 'services/lyrics_service.dart';
+import 'dart:async';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -85,7 +86,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Uint8List? _albumArtBytes;
 
   List<dynamic> _lyrics = [];
-  Duration _position = Duration.zero;
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(
+    Duration.zero,
+  );
 
   // 기본 테마 색상 설정
   Color _bgColor = const Color(0xFFE1E0E5);
@@ -148,18 +151,38 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     // 1. 재생 위치 리스너
     audioHandler.position.listen((pos) {
-      if (mounted) setState(() => _position = pos);
+      if (mounted) _positionNotifier.value = pos; // setState 없이 값만 주입
+    });
+
+    // 🚀 [추가] 실시간 위치 강제 업데이트 타이머
+    // 200ms마다 실행되어 가사가 아주 부드럽게 밀려 올라갑니다.
+    Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      // 재생 중일 때만 position을 갱신합니다.
+      if (_isPlaying) {
+        _positionNotifier.value += const Duration(milliseconds: 200);
+      }
     });
 
     // 2. 가사 로딩 및 곡 변경 리스너 (해결 핵심)
     audioHandler.mediaItem.listen((item) {
       if (item != null && mounted) {
-        setState(() {
-          _currentTitle = item.title;
-          _currentArtist = (item.artist ?? "Unknown").toUpperCase();
-          _lyrics = []; // 🚀 중요: 새 곡이 나오면 가사 리스트를 비워줍니다. (로딩은 아직 안 함)
-          _lastFetchedSongId = ""; // 로딩 기록 초기화
-        });
+        // 🚀 [중요] 곡 제목이 '실제로' 다를 때만 모든 데이터를 초기화합니다.
+        // 이 조건이 없으면 가사 로딩 중에 제목 정보를 다시 받으면서 시계가 0으로 튕깁니다.
+        if (_currentTitle != item.title) {
+          _positionNotifier.value = Duration.zero; 
+          
+          setState(() {
+            _currentTitle = item.title;
+            _currentArtist = (item.artist ?? "Unknown").toUpperCase();
+            _lyrics = []; 
+            _lastFetchedSongId = ""; 
+          });
+        }
       }
     });
 
@@ -228,54 +251,57 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     );
   }
 
-LyricStatus _currentStatus = LyricStatus.loading;
+  LyricStatus _currentStatus = LyricStatus.loading;
   String _lastFetchedSongId = "";
-Future<void> _updateLyrics(dynamic item) async {
-  String title;
-  String artist;
+  Future<void> _updateLyrics(dynamic item) async {
+    String title;
+    String artist;
 
-  if (item is Map) {
-    title = item['title']?.toString() ?? "Unknown";
-    artist = item['artist']?.toString() ?? "Unknown";
-  } else {
-    title = item.title ?? "Unknown";
-    artist = item.artist ?? "Unknown";
-  }
-
-  final String currentId = "${title}_$artist";
-
-  // 이미 같은 곡의 가사를 가져왔다면 중단
-  if (_lastFetchedSongId == currentId) return;
-  _lastFetchedSongId = currentId;
-
-  debugPrint("🎵 가사 업데이트 시도: $title");
-
-  // 가사 초기화 및 로딩 상태로 변경
-  if (mounted) {
-    setState(() {
-      _lyrics = [];
-      _currentStatus = LyricStatus.loading; // 🚀 로딩 상태 시작
-    });
-  }
-
-  try {
-    // 🚀 수정된 부분: result.lyrics와 result.status를 받아옵니다.
-    final result = await LyricsService.getLyrics(title, artist);
-
-    if (mounted && _lastFetchedSongId == currentId) {
-      setState(() {
-        _lyrics = result.lyrics; // 가사 리스트 저장
-        _currentStatus = result.status; // 🚀 서버에서 받은 실제 상태(success, noLyrics 등) 저장
-      });
-      debugPrint("✅ 가사 결과 상태: ${result.status.name}, ${result.lyrics.length}줄");
+    if (item is Map) {
+      title = item['title']?.toString() ?? "Unknown";
+      artist = item['artist']?.toString() ?? "Unknown";
+    } else {
+      title = item.title ?? "Unknown";
+      artist = item.artist ?? "Unknown";
     }
-  } catch (e) {
-    debugPrint("🚨 가사 로딩 실패 (심각한 에러): $e");
+
+    final String currentId = "${title}_$artist";
+
+    // 이미 같은 곡의 가사를 가져왔다면 중단
+    if (_lastFetchedSongId == currentId) return;
+    _lastFetchedSongId = currentId;
+
+    debugPrint("🎵 가사 업데이트 시도: $title");
+
+    // 가사 초기화 및 로딩 상태로 변경
     if (mounted) {
-      setState(() => _currentStatus = LyricStatus.networkError);
+      setState(() {
+        _lyrics = [];
+        _currentStatus = LyricStatus.loading; // 🚀 로딩 상태 시작
+      });
+    }
+
+    try {
+      // 🚀 수정된 부분: result.lyrics와 result.status를 받아옵니다.
+      final result = await LyricsService.getLyrics(title, artist);
+
+      if (mounted && _lastFetchedSongId == currentId) {
+        setState(() {
+          _lyrics = result.lyrics; // 가사 리스트 저장
+          _currentStatus =
+              result.status; // 🚀 서버에서 받은 실제 상태(success, noLyrics 등) 저장
+        });
+        debugPrint(
+          "✅ 가사 결과 상태: ${result.status.name}, ${result.lyrics.length}줄",
+        );
+      }
+    } catch (e) {
+      debugPrint("🚨 가사 로딩 실패 (심각한 에러): $e");
+      if (mounted) {
+        setState(() => _currentStatus = LyricStatus.networkError);
+      }
     }
   }
-}
 
   void _handleManualRefresh() async {
     final now = DateTime.now();
@@ -359,8 +385,8 @@ Future<void> _updateLyrics(dynamic item) async {
       if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
         // 제목이 같고 아티스트가 유효하면 불필요한 리빌드 방지
         if (_currentTitle == event.title) {
-      return; 
-    }
+          return;
+        }
 
         if (!mounted) return;
 
@@ -411,6 +437,20 @@ Future<void> _updateLyrics(dynamic item) async {
   // 미디어 상태 업데이트 로직도 별도 함수로 빼면 더 깨끗합니다.
   void _handleMediaStatusUpdate(dynamic data) {
     if (data == null || !mounted) return;
+
+    if (data is Map && data['position'] != null) {
+      // 🚀 핵심 수정: 시스템이 주는 시간을 무조건 믿지 않습니다.
+      int incomingPos = data['position'];
+      
+      // 재생 중인데 시스템이 '0'을 보내면, 이건 명백한 데이터 오류이므로 무시합니다.
+      // (우리는 이미 별도의 Timer로 시계를 돌리고 있으니 안심하세요!)
+      if (_isPlaying && incomingPos <= 0) {
+        debugPrint("🚫 시스템의 잘못된 0초 신호 차단함");
+      } else {
+        // 정상적인 범위의 시간일 때만 업데이트합니다.
+        _positionNotifier.value = Duration(milliseconds: incomingPos);
+      }
+    }
 
     bool incomingPlayingState = _isPlaying;
 
@@ -694,37 +734,69 @@ Future<void> _updateLyrics(dynamic item) async {
                         RepaintBoundary(
                           child: GestureDetector(
                             onLongPress: _handleManualRefresh,
-                            child: ClassicVinylView(
-                              lyricStatus: _currentStatus,
-                              lyrics: _lyrics, // 현재 불러온 가사 리스트
-                              currentPosition: _position, // 오디오 플레이어의 현재 시간
-                              isMinimalMode: _isMinimalMode,
-                              isLyricsMode: _showLyrics,
-                              size: config.lpSize,
-                              albumArtBytes: _albumArtBytes,
-                              title: _currentTitle,
-                              artist: _currentArtist,
-                              lpController: _lpController,
-                              isPlaying: _isPlaying,
-                              onToggleMode: () => setState(
-                                () => _isMinimalMode = !_isMinimalMode,
-                              ),
-                              onShowLyrics: () async {
-                                // 1. 화면을 먼저 가사 모드로 전환 (유리창 띄우기)
-                                setState(() => _showLyrics = true);
+                            child: ValueListenableBuilder<Duration>(
+                              // 🚀 핵심: 네이티브에서 받은 시간값(Notifier)만 관찰합니다.
+                              // 이 빌더 안의 코드만 다시 그려지므로 전체 화면 렉이 사라집니다.
+                              valueListenable: _positionNotifier,
+                              builder: (context, currentPos, child) {
+                                return ClassicVinylView(
+                                  lyricStatus: _currentStatus,
+                                  lyrics: _lyrics,
+                                  currentPosition: currentPos, // 🚀 실시간 시간 전달
+                                  isMinimalMode: _isMinimalMode,
+                                  isLyricsMode: _showLyrics,
+                                  size: config.lpSize,
+                                  albumArtBytes: _albumArtBytes,
+                                  title: _currentTitle,
+                                  artist: _currentArtist,
+                                  lpController: _lpController,
+                                  isPlaying: _isPlaying,
 
-                                // 2. 가사가 비어있을 때만 데이터를 가져옵니다.
-                                if (_lyrics.isEmpty) {
-                                  // 이미 만들어두신 _updateLyrics 함수를 재활용하거나 직접 호출합니다.
-                                  // 현재 곡 정보를 담은 가상의 객체를 만들어서 넘겨줍니다.
-                                  await _updateLyrics({
-                                    'title': _currentTitle,
-                                    'artist': _currentArtist,
-                                  });
-                                }
+                                  // 모드 전환 (최소화/전체)
+                                  onToggleMode: () => setState(
+                                    () => _isMinimalMode = !_isMinimalMode,
+                                  ),
+
+                                  // 가사 창 열기
+                                  onShowLyrics: () async {
+                                    // 1. 즉시 가사 모드로 UI 전환 (유리창 등장)
+                                    setState(() => _showLyrics = true);
+
+                                    if (_lyrics.isEmpty) {
+                                      await _updateLyrics({
+                                        'title': _currentTitle,
+                                        'artist': _currentArtist,
+                                      });
+                                    }
+
+                                    // 🚀 [추가] 켜는 순간 시스템 시계 강제 동기화
+                                    try {
+                                      const platform = MethodChannel(
+                                        'com.meteor.player/media_control',
+                                      );
+                                      final dynamic result = await platform
+                                          .invokeMethod('getCurrentStatus');
+
+                                      if (result != null &&
+                                          result['position'] != null) {
+                                        // 시스템의 실제 시간으로 우리 시계를 워프시킵니다.
+                                        _positionNotifier.value = Duration(
+                                          milliseconds: result['position'],
+                                        );
+                                        debugPrint(
+                                          "🎯 가사 로드 후 최종 동기화 완료: ${_positionNotifier.value}",
+                                        );
+                                      }
+                                    } catch (e) {
+                                      debugPrint("⚠️ 시계 동기화 실패: $e");
+                                    }
+                                  },
+
+                                  // 가사 창 닫기
+                                  onCloseLyrics: () =>
+                                      setState(() => _showLyrics = false),
+                                );
                               },
-                              onCloseLyrics: () =>
-                                  setState(() => _showLyrics = false), // 가사 끄기
                             ),
                           ),
                         ),

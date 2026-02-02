@@ -27,7 +27,7 @@ class LyricsService {
     // 괄호()나 대괄호[] 안에 '특정 키워드'가 포함된 경우만 해당 괄호 덩어리 삭제
     // 키워드: official, video, mv, audio, music, edit, prod, feat, ft, version, lyrics 등
     final junkPattern = RegExp(
-      r'[\(\[][^\]\)]*(?:official|video|mv|audio|music|edit|prod|feat|ft|version|lyrics|radio)[^\]\)]*[\)\]]', 
+      r'[\(\[][^\]\)]*(?:official|video|mv|audio|music|edit|prod|feat|ft|version|lyrics|radio|piano)[^\]\)]*[\)\]]', 
       caseSensitive: false
     );
     cleanTitle = cleanTitle.replaceAll(junkPattern, '').trim();
