@@ -7,12 +7,14 @@ class StreamProgressBar extends StatelessWidget {
   final double barWidth;
   final Color bgColor;
   final Color barColor;
+  final Function(double ratio)? onSeek;
 
   const StreamProgressBar({
     super.key,
     required this.barWidth,
     required this.bgColor,
     required this.barColor,
+    this.onSeek,
   });
 
   @override
@@ -22,6 +24,7 @@ class StreamProgressBar extends StatelessWidget {
       stream: const EventChannel('com.meteor.player/media_status').receiveBroadcastStream(),
       builder: (context, snapshot) {
         double currentFactor = 0.0;
+        int duration = 1;
 
         if (snapshot.hasData && snapshot.data != null) {
           try {
@@ -42,7 +45,13 @@ class StreamProgressBar extends StatelessWidget {
           factor: currentFactor,
           bgColor: bgColor,
           barColor: barColor,
-          onSeek: (newRatio) => PlayerLogic.seekTo(newRatio),
+          onSeek: (newRatio) {
+            if (onSeek != null) {
+              onSeek!(newRatio);
+            } else {
+              PlayerLogic.seekTo(newRatio); // 기본 동작
+            }
+          },
         );
       },
     );
