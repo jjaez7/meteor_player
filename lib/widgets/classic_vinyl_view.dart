@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:mp_design/services/lyrics_service.dart';
 import 'vinyl_component.dart';
 import 'dart:ui';
+import '../models/lyric_model.dart';
+import 'package:flutter/scheduler.dart';
+import 'dart:async';
 //import '../models/lyric_model.dart'; // LyricLine 모델 경로 확인
 
 class ClassicVinylView extends StatelessWidget {
@@ -43,11 +46,6 @@ class ClassicVinylView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isPlaying) {
-      if (!lpController.isAnimating) lpController.repeat();
-    } else {
-      lpController.stop();
-    }
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
@@ -139,11 +137,13 @@ class ClassicVinylView extends StatelessWidget {
         width: size, // 미니멀 모드와 동일한 너비
         height: size, // 미니멀 모드와 동일한 높이
         child: _LyricsAutoScroller(
+          key: ValueKey(title),
           lyrics: lyrics,
           currentPosition: currentPosition,
           size: size,
           onClose: onCloseLyrics,
           lyricStatus: lyricStatus,
+          isPlaying: isPlaying,
         ),
       ),
     );
@@ -157,33 +157,147 @@ class _LyricsAutoScroller extends StatefulWidget {
   final double size;
   final VoidCallback onClose;
   final LyricStatus lyricStatus;
+final bool isPlaying;
 
   const _LyricsAutoScroller({
+    super.key,
     required this.lyrics,
     required this.currentPosition,
     required this.size,
     required this.onClose,
     required this.lyricStatus,
+    required this.isPlaying,
   });
 
   @override
   State<_LyricsAutoScroller> createState() => _LyricsAutoScrollerState();
 }
 
-class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> {
+class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> 
+    with SingleTickerProviderStateMixin {
   late FixedExtentScrollController _scrollController;
   int _lastIndex = -1;
+  bool _isUserInteracting = false;
+  Timer? _debounceTimer;
+
+  late Ticker _ticker;
+  Duration _internalOffset = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _scrollController = FixedExtentScrollController();
+    _lastIndex = _calculateCurrentIndex();
+    _scrollController = FixedExtentScrollController(
+      initialItem: _lastIndex >= 0 ? _lastIndex : 0,
+    );
+
+    _ticker = createTicker((elapsed) {
+      if (mounted) {
+        setState(() {
+          _internalOffset = elapsed; 
+        });
+        // 🚀 Ticker에서 매 프레임 감시하므로 '뒷북' 스크롤이 사라집니다.
+        _checkAndScroll();
+      }
+    });
+    
+    if (widget.isPlaying) _ticker.start();
+  }
+
+  void _checkAndScroll() {
+    if (_isUserInteracting || !_scrollController.hasClients) return;
+
+    int currentIndex = _calculateCurrentIndex();
+    if (currentIndex != _lastIndex && currentIndex >= 0) {
+      _lastIndex = currentIndex;
+      
+      // 🚀 반응 속도 최적화: 400ms, easeOutCubic
+      _scrollController.animateToItem(
+        currentIndex,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutQuart,
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        if (!_ticker.isTicking) _ticker.start();
+      } else {
+        _ticker.stop();
+      }
+    }
+
+    if (widget.lyrics != oldWidget.lyrics || widget.currentPosition != oldWidget.currentPosition) {
+      _internalOffset = Duration.zero;
+      _lastIndex = _calculateCurrentIndex();
+      
+      if (!_isUserInteracting && _scrollController.hasClients) {
+        // 곡이 바뀌면 애니메이션 없이 즉시 이동
+        _scrollController.jumpToItem(_lastIndex >= 0 ? _lastIndex : 0);
+      }
+    }
+  }
+
+  int _calculateCurrentIndex() {
+    if (widget.lyrics.isEmpty) return -1;
+
+    // 🚀 보정값을 150ms -> 300ms로 높여서 '미리' 준비하게 합니다.
+    // 음악 재생 라이브러리의 딜레이에 따라 이 값을 200~400 사이로 조절해 보세요.
+    final int currentMs = widget.currentPosition.inMilliseconds + 
+                          _internalOffset.inMilliseconds + 400; 
+    
+    int foundIndex = 0;
+    for (int i = 0; i < widget.lyrics.length; i++) {
+      final item = widget.lyrics[i];
+      if (item is! LyricLine) continue;
+
+      if (item.time.inMilliseconds <= currentMs) {
+        foundIndex = i;
+      } else {
+        break; 
+      }
+    }
+    return foundIndex;
+  }
+
+  void _onUserInteraction() {
+    if (_isUserInteracting) {
+      _debounceTimer?.cancel(); // 이미 조작 중이면 타이머만 리셋
+    } else {
+      setState(() => _isUserInteracting = true);
+    }
+    
+    _debounceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _isUserInteracting = false);
+        _lastIndex = -1; // 복귀 시 즉시 다시 그리도록 초기화
+        _checkAndScroll();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _ticker.dispose();
+    _debounceTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToCurrentIndex() {
+    int currentIndex = _calculateCurrentIndex();
+    if (currentIndex >= 0 && _scrollController.hasClients && !_isUserInteracting) {
+      _scrollController.animateToItem(
+        currentIndex,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   // 상태 메시지 헬퍼 (기존 유지)
@@ -217,46 +331,10 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> {
     }
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
-    // 🚀 1. 반응형 폰트 사이즈 계산
-    final screenSize = MediaQuery.of(context).size;
-    // 화면 너비에 따라 폰트 크기 결정 (최소 18, 최대 28)
-    final double responsiveBaseSize = (screenSize.width * 0.05).clamp(
-      18.0,
-      24.0,
-    );
-    final double responsiveCurrentSize = (screenSize.width * 0.07).clamp(
-      22.0,
-      30.0,
-    );
-
-    debugPrint("🕒 Position: ${widget.currentPosition} | Index: $_lastIndex");
+    int currentIndex = _calculateCurrentIndex();
     final double responsiveRadius = widget.size * 0.12;
-
-    // 🚀 1. 실시간 인덱스 계산
-    int currentIndex =
-        widget.lyrics.indexWhere((line) => line.time > widget.currentPosition) -
-        1;
-    if (currentIndex < 0 &&
-        widget.lyrics.isNotEmpty &&
-        widget.currentPosition >= widget.lyrics.last.time) {
-      currentIndex = widget.lyrics.length - 1;
-    }
-
-    // 🚀 2. 인덱스 변경 시 자동 스크롤 애니메이션 실행
-    if (currentIndex != _lastIndex && currentIndex >= 0) {
-      _lastIndex = currentIndex;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.animateToItem(
-            currentIndex,
-            duration: const Duration(milliseconds: 400), // 조금 더 부드럽게 400ms
-            curve: Curves.easeOutQuart, // 자연스러운 감속
-          );
-        }
-      });
-    }
 
     return GestureDetector(
       onTap: widget.onClose,
@@ -279,18 +357,16 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> {
             filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
             child: Container(
               decoration: BoxDecoration(
-                // 🚀 자연스러운 유리 느낌을 위한 그라데이션
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
+                    Colors.white.withValues(alpha: 0.1),
                     Colors.white.withValues(alpha: 0.05),
-                    Colors.white.withValues(alpha: 0.03),
                   ],
                 ),
-                // 🚀 테두리 선 제거 효과
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: Colors.white.withValues(alpha: 0.15),
                   width: 0.5,
                 ),
               ),
@@ -298,108 +374,70 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> {
                 children: [
                   Positioned.fill(
                     child: widget.lyrics.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _getStatusIcon(widget.lyricStatus),
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                  size: 40,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _getStatusMessage(widget.lyricStatus),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    fontSize: 13,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
+                        ? _buildEmptyContent() // 가사 없을 때 화면 (하단에 정의)
                         : LayoutBuilder(
                             builder: (context, constraints) {
-                              // 🚀 기기 너비에 따른 반응형 폰트 사이즈 계산
                               final double width = constraints.maxWidth;
-                              final double responsiveBaseSize = (width * 0.05)
-                                  .clamp(16.0, 20.0);
-                              final double responsiveCurrentSize =
-                                  (width * 0.065).clamp(20.0, 28.0);
+                              final double responsiveBaseSize = (width * 0.05).clamp(16.0, 20.0);
+                              final double responsiveCurrentSize = (width * 0.065).clamp(20.0, 28.0);
 
-                              return ListWheelScrollView.useDelegate(
-                                controller: _scrollController,
-                                // 🚀 줄바꿈(2줄)을 고려하여 아이템 높이를 넉넉하게 설정
-                                itemExtent: responsiveCurrentSize * 3.0,
-                                physics: const NeverScrollableScrollPhysics(),
-                                diameterRatio: 2.0, // 굴곡을 완만하게 하여 줄바꿈 시 왜곡 방지
-                                childDelegate: ListWheelChildBuilderDelegate(
-                                  childCount: widget.lyrics.length,
-                                  builder: (context, index) {
-                                    final isCurrent = index == currentIndex;
-
-                                    return Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 30,
+                              // 🚀 중요: NotificationListener를 추가해야 스크롤 상태를 감지합니다.
+                              return NotificationListener<ScrollNotification>(
+                                onNotification: (notification) {
+                                  if (notification is ScrollStartNotification) {
+                                    _onUserInteraction(); // 사용자가 만지면 자동 스크롤 일시 정지
+                                  }
+                                  return false;
+                                },
+                                child: ListWheelScrollView.useDelegate(
+                                  controller: _scrollController,
+                                  itemExtent: responsiveCurrentSize * 5.0,
+                                  physics: const FixedExtentScrollPhysics(),
+                                  clipBehavior: Clip.hardEdge,
+                                  diameterRatio: 2.0,
+                                  perspective: 0.002,
+                                  childDelegate: ListWheelChildBuilderDelegate(
+                                    childCount: widget.lyrics.length,
+                                    builder: (context, index) {
+                                      final isCurrent = index == currentIndex;
+                                      return Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 30),
+                                          child: AnimatedDefaultTextStyle(
+                                            duration: const Duration(milliseconds: 300),
+                                            style: TextStyle(
+                                              color: isCurrent
+                                                  ? Colors.white
+                                                  : Colors.white.withValues(alpha: 0.25),
+                                              fontSize: isCurrent
+                                                  ? responsiveCurrentSize
+                                                  : responsiveBaseSize,
+                                              fontWeight: isCurrent
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                              height: 1.3,
+                                              letterSpacing: -0.5,
+                                            ),
+                                            child: Text(
+                                              widget.lyrics[index].text,
+                                              textAlign: TextAlign.center,
+                                              softWrap: true,
+                                              maxLines: 4,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
                                         ),
-                                        child: AnimatedDefaultTextStyle(
-                                          duration: const Duration(
-                                            milliseconds: 300,
-                                          ),
-                                          style: TextStyle(
-                                            color: isCurrent
-                                                ? Colors.white
-                                                : Colors.white.withValues(
-                                                    alpha: 0.25,
-                                                  ),
-                                            fontSize: isCurrent
-                                                ? responsiveCurrentSize
-                                                : responsiveBaseSize,
-                                            fontWeight: isCurrent
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                            height: 1.3, // 줄 간격 확보
-                                            letterSpacing: -0.5,
-                                          ),
-                                          // 🚀 FittedBox를 제거하여 글자 크기를 고정하고 줄바꿈 허용
-                                          child: Text(
-                                            widget.lyrics[index].text,
-                                            textAlign: TextAlign.center,
-                                            softWrap: true,
-                                            maxLines: 3, // 최대 2줄까지 허용
-                                            overflow: TextOverflow
-                                                .ellipsis, // 넘치면 ... 처리
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
                               );
                             },
                           ),
                   ),
-
-                  // 하단 출처 표기 (은은하게 고정)
+                  // 하단 출처 표기 (생략 가능)
                   if (widget.lyrics.isNotEmpty)
-                    Positioned(
-                      bottom: 8,
-                      left: 0,
-                      right: 0,
-                      child: Text(
-                        "Lyrics provided by LRCLIB",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          fontSize: 9,
-                          letterSpacing: 0.5,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                    ),
+                    _buildSourceTag(),
                 ],
               ),
             ),
@@ -407,5 +445,25 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> {
         ),
       ),
     );
+  }
+
+  // 가사 없을 때 화면 별도 추출
+  Widget _buildEmptyContent() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          widget.lyricStatus == LyricStatus.loading
+              ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+              : Icon(_getStatusIcon(widget.lyricStatus), color: Colors.white.withValues(alpha: 0.4), size: 40),
+          const SizedBox(height: 12),
+          Text(_getStatusMessage(widget.lyricStatus), textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, height: 1.4)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSourceTag() {
+    return Positioned(bottom: 8, left: 0, right: 0, child: Text("Lyrics provided by LRCLIB", textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 9, letterSpacing: 0.5, fontWeight: FontWeight.w300)));
   }
 }

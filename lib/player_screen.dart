@@ -138,6 +138,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       }
     });
 
+
     // 1. 애니메이션 컨트롤러 초기화 (addListener는 계속 삭제된 상태 유지)
     _lpController = AnimationController(
       vsync: this,
@@ -151,21 +152,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     // 1. 재생 위치 리스너
     audioHandler.position.listen((pos) {
+      debugPrint("🕒 시계 심박동: ${pos.inMilliseconds}ms");
       if (mounted) _positionNotifier.value = pos; // setState 없이 값만 주입
-    });
-
-    // 🚀 [추가] 실시간 위치 강제 업데이트 타이머
-    // 200ms마다 실행되어 가사가 아주 부드럽게 밀려 올라갑니다.
-    Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      // 재생 중일 때만 position을 갱신합니다.
-      if (_isPlaying) {
-        _positionNotifier.value += const Duration(milliseconds: 200);
-      }
     });
 
     // 2. 가사 로딩 및 곡 변경 리스너 (해결 핵심)
@@ -174,14 +162,17 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         // 🚀 [중요] 곡 제목이 '실제로' 다를 때만 모든 데이터를 초기화합니다.
         // 이 조건이 없으면 가사 로딩 중에 제목 정보를 다시 받으면서 시계가 0으로 튕깁니다.
         if (_currentTitle != item.title) {
-          _positionNotifier.value = Duration.zero; 
-          
+          _positionNotifier.value = Duration.zero;
+
           setState(() {
             _currentTitle = item.title;
             _currentArtist = (item.artist ?? "Unknown").toUpperCase();
-            _lyrics = []; 
-            _lastFetchedSongId = ""; 
+            _lyrics = [];
+            _lastFetchedSongId = "";
+            _currentStatus = LyricStatus.loading;
           });
+
+          _updateLyrics(item);
         }
       }
     });
@@ -254,6 +245,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   LyricStatus _currentStatus = LyricStatus.loading;
   String _lastFetchedSongId = "";
   Future<void> _updateLyrics(dynamic item) async {
+    _positionNotifier.value = Duration.zero;
     String title;
     String artist;
 
@@ -390,6 +382,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         if (!mounted) return;
 
+        _positionNotifier.value = Duration.zero;
+
         // 1. [즉시 업데이트] 이미지와 텍스트부터 먼저 바꿉니다 (callback 제거)
         setState(() {
           _currentTitle = event.title!;
@@ -397,7 +391,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           _lyrics = [];
           _lastFetchedSongId = "";
           _isPlaying = true;
+          _currentStatus = LyricStatus.loading;
         });
+
+        _updateLyrics({'title': event.title, 'artist': event.content});
 
         await _fetchInitialStatus();
 
@@ -430,7 +427,16 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     const EventChannel(
       'com.meteor.player/media_status',
     ).receiveBroadcastStream().listen((status) {
-      _handleMediaStatusUpdate(status);
+      if (status is Map && status['position'] != null) {
+        final int incomingPos = status['position'];
+
+        // 현재 값과 200ms 이상 차이날 때만 업데이트 (UI 스레드 부하 감소)
+        final diff = (incomingPos - _positionNotifier.value.inMilliseconds)
+            .abs();
+        if (diff > 200) {
+          _positionNotifier.value = Duration(milliseconds: incomingPos);
+        }
+      }
     });
   }
 
@@ -441,14 +447,24 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     if (data is Map && data['position'] != null) {
       // 🚀 핵심 수정: 시스템이 주는 시간을 무조건 믿지 않습니다.
       int incomingPos = data['position'];
-      
-      // 재생 중인데 시스템이 '0'을 보내면, 이건 명백한 데이터 오류이므로 무시합니다.
-      // (우리는 이미 별도의 Timer로 시계를 돌리고 있으니 안심하세요!)
-      if (_isPlaying && incomingPos <= 0) {
-        debugPrint("🚫 시스템의 잘못된 0초 신호 차단함");
-      } else {
-        // 정상적인 범위의 시간일 때만 업데이트합니다.
+
+      if (_positionNotifier.value.inMilliseconds == 0 && incomingPos > 2000) {
+        debugPrint("🚫 이전 곡의 잔상 시간($incomingPos) 무시함");
+        return;
+      }
+
+      if (incomingPos < 500) {
+        // 곡 초반(1초 미만) 신호는 곡이 바뀌었거나 되돌린 것이므로 즉시 리셋
         _positionNotifier.value = Duration(milliseconds: incomingPos);
+      } else if (_isPlaying && incomingPos <= 0) {
+        // 재생 중인데 갑자기 0이 들어오는 케이스만 무시
+        debugPrint("🚫 재생 중 튀는 신호 차단");
+      } else {
+        final diff = (incomingPos - _positionNotifier.value.inMilliseconds)
+            .abs();
+        if (diff > 200) {
+          _positionNotifier.value = Duration(milliseconds: incomingPos);
+        }
       }
     }
 
@@ -570,6 +586,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     } catch (e) {
       debugPrint("초기 정보를 가져올 수 없습니다: $e");
     }
+    _updateLyrics({'title': _currentTitle, 'artist': _currentArtist});
   }
 
   @override
@@ -735,14 +752,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           child: GestureDetector(
                             onLongPress: _handleManualRefresh,
                             child: ValueListenableBuilder<Duration>(
-                              // 🚀 핵심: 네이티브에서 받은 시간값(Notifier)만 관찰합니다.
-                              // 이 빌더 안의 코드만 다시 그려지므로 전체 화면 렉이 사라집니다.
                               valueListenable: _positionNotifier,
-                              builder: (context, currentPos, child) {
+                              builder: (context, realTimePos, child) {
                                 return ClassicVinylView(
+                                  // 1. ValueKey를 제거하거나 고정 키를 사용하세요. (리빌드 최적화)
+                                  // key: ValueKey('classic_vinyl'),
                                   lyricStatus: _currentStatus,
                                   lyrics: _lyrics,
-                                  currentPosition: currentPos, // 🚀 실시간 시간 전달
+                                  currentPosition: realTimePos,
                                   isMinimalMode: _isMinimalMode,
                                   isLyricsMode: _showLyrics,
                                   size: config.lpSize,
@@ -752,47 +769,51 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                   lpController: _lpController,
                                   isPlaying: _isPlaying,
 
-                                  // 모드 전환 (최소화/전체)
                                   onToggleMode: () => setState(
                                     () => _isMinimalMode = !_isMinimalMode,
                                   ),
 
-                                  // 가사 창 열기
-                                  onShowLyrics: () async {
-                                    // 1. 즉시 가사 모드로 UI 전환 (유리창 등장)
+                                  onShowLyrics: () {
+                                    // 1. UI 전환을 최우선 실행 (가사창 먼저 보여주기)
                                     setState(() => _showLyrics = true);
 
-                                    if (_lyrics.isEmpty) {
-                                      await _updateLyrics({
-                                        'title': _currentTitle,
-                                        'artist': _currentArtist,
-                                      });
-                                    }
-
-                                    // 🚀 [추가] 켜는 순간 시스템 시계 강제 동기화
-                                    try {
-                                      const platform = MethodChannel(
-                                        'com.meteor.player/media_control',
-                                      );
-                                      final dynamic result = await platform
-                                          .invokeMethod('getCurrentStatus');
-
-                                      if (result != null &&
-                                          result['position'] != null) {
-                                        // 시스템의 실제 시간으로 우리 시계를 워프시킵니다.
-                                        _positionNotifier.value = Duration(
-                                          milliseconds: result['position'],
-                                        );
-                                        debugPrint(
-                                          "🎯 가사 로드 후 최종 동기화 완료: ${_positionNotifier.value}",
-                                        );
+                                    // 2. 가사 데이터 및 시간 동기화
+                                    Future(() async {
+                                      // 가사가 없으면 로딩
+                                      if (_lyrics.isEmpty) {
+                                        await _updateLyrics({
+                                          'title': _currentTitle,
+                                          'artist': _currentArtist,
+                                        });
                                       }
-                                    } catch (e) {
-                                      debugPrint("⚠️ 시계 동기화 실패: $e");
-                                    }
+
+                                      try {
+                                        const platform = MethodChannel(
+                                          'com.meteor.player/media_control',
+                                        );
+                                        final dynamic result = await platform
+                                            .invokeMethod('getCurrentStatus');
+
+                                        if (result != null &&
+                                            result['position'] != null) {
+                                          // 🚀 안전한 타입 변환: 어떤 숫자 형태든 대응
+                                          final int posMs =
+                                              (result['position'] as num)
+                                                  .toInt();
+
+                                          // 🚀 즉시 갱신하여 가사 위젯이 현재 위치를 바로 잡게 함
+                                          _positionNotifier.value = Duration(
+                                            milliseconds: posMs,
+                                          );
+
+                                          debugPrint("🎯 동기화 완료: ${posMs}ms");
+                                        }
+                                      } catch (e) {
+                                        debugPrint("⚠️ 시계 동기화 실패: $e");
+                                      }
+                                    });
                                   },
 
-                                  // 가사 창 닫기
                                   onCloseLyrics: () =>
                                       setState(() => _showLyrics = false),
                                 );
