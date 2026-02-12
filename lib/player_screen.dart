@@ -22,6 +22,7 @@ import 'features/screen_lock.dart';
 //import 'features/pip_handler.dart';
 import 'services/lyrics_service.dart';
 import 'dart:async';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -74,23 +75,25 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   void _handleSeek(Duration targetTime) {
-  // 1. 시스템 오디오 핸들러에 탐색 명령 전달
-  audioHandler.seek(targetTime);
+    // 1. 시스템 오디오 핸들러에 탐색 명령 전달
+    audioHandler.seek(targetTime);
 
-  // 2. 현재 시간을 즉시 업데이트하여 UI 반응성 높임
-  _positionNotifier.value = targetTime;
+    // 2. 현재 시간을 즉시 업데이트하여 UI 반응성 높임
+    _positionNotifier.value = targetTime;
 
-  // 3. 가사가 있다면, 변경된 시간에 맞는 가사 인덱스로 즉시 이동
-  if (_lyrics.isNotEmpty) {
-    int newIndex = _lyrics.lastIndexWhere((line) => line.time <= targetTime);
-    if (newIndex != -1) {
-      // 만약 가사 위젯에서 별도의 index 변수를 쓰고 있다면 여기서 setState를 해줍니다.
-      // 현재 ClassicVinylView 내부에서 realTimePos를 직접 보고 있다면 
-      // notifier 업데이트만으로도 충분합니다.
-      debugPrint("🎯 수동 탐색 동기화: Index $newIndex (${targetTime.inMilliseconds}ms)");
+    // 3. 가사가 있다면, 변경된 시간에 맞는 가사 인덱스로 즉시 이동
+    if (_lyrics.isNotEmpty) {
+      int newIndex = _lyrics.lastIndexWhere((line) => line.time <= targetTime);
+      if (newIndex != -1) {
+        // 만약 가사 위젯에서 별도의 index 변수를 쓰고 있다면 여기서 setState를 해줍니다.
+        // 현재 ClassicVinylView 내부에서 realTimePos를 직접 보고 있다면
+        // notifier 업데이트만으로도 충분합니다.
+        debugPrint(
+          "🎯 수동 탐색 동기화: Index $newIndex (${targetTime.inMilliseconds}ms)",
+        );
+      }
     }
   }
-}
 
   // 클래스 상단 변수 선언부
   final GlobalKey _progressKey = GlobalKey();
@@ -157,7 +160,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           break;
       }
     });
-
 
     // 1. 애니메이션 컨트롤러 초기화 (addListener는 계속 삭제된 상태 유지)
     _lpController = AnimationController(
@@ -239,6 +241,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         }
       });
     });
+
+    _setLowRefreshRate();
   }
 
   void _handleInternalToggle() {
@@ -360,6 +364,24 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
   }
 
+  Future<void> _setLowRefreshRate() async {
+    try {
+      // 주사율 제어 패키지 임포트가 필요합니다: import 'package:flutter_displaymode/flutter_displaymode.dart';
+      final List<DisplayMode> modes = await FlutterDisplayMode.supported;
+
+      // 60Hz 모드 찾기
+      final DisplayMode lowRefreshMode = modes.firstWhere(
+        (m) => m.refreshRate.round() == 60,
+        orElse: () => DisplayMode.auto,
+      );
+
+      await FlutterDisplayMode.setPreferredMode(lowRefreshMode);
+      debugPrint("✅ 앱 전체 주as율 60Hz 고정 완료");
+    } catch (e) {
+      debugPrint("⚠️ 주사율 설정 실패 (지원하지 않는 기기일 수 있음): $e");
+    }
+  }
+
   void _handleColorChange(Color newColor, String target) {
     setState(() {
       // UI 업데이트 로직만 남김
@@ -395,7 +417,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       if (event.hasRemoved == true || event.title == null) return;
 
       if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
-
         // 제목이 같고 아티스트가 유효하면 불필요한 리빌드 방지
         if (_currentTitle == event.title) {
           return;
@@ -418,8 +439,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         await _fetchInitialStatus();
 
         _updateLyrics({'title': event.title, 'artist': event.content});
-
-        
 
         if (mounted) {
           setState(() {
@@ -558,11 +577,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           _isPlaying = data['isPlaying'] ?? false;
 
           if (data['duration'] != null) {
-          final int durMs = (data['duration'] as num).toInt();
-          _totalDuration = Duration(milliseconds: durMs);
-          debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
-        }
-      });
+            final int durMs = (data['duration'] as num).toInt();
+            _totalDuration = Duration(milliseconds: durMs);
+            debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
+          }
+        });
 
         // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
         if (_isPlaying) {
@@ -1058,31 +1077,31 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
   // 2. 프로그레스 바 스트림 빌더
-Widget _buildProgressBarStream(double barWidth) {
-  return SizedBox(
-    key: _progressKey,
-    width: barWidth,
-    child: StreamProgressBar(
-      barWidth: barWidth,
-      bgColor: _bgColor,
-      barColor: _barColor,
-      onSeek: (ratio) {
-        // 1. 실제 오디오 탐색
-        PlayerLogic.seekTo(ratio);
+  Widget _buildProgressBarStream(double barWidth) {
+    return SizedBox(
+      key: _progressKey,
+      width: barWidth,
+      child: StreamProgressBar(
+        barWidth: barWidth,
+        bgColor: _bgColor,
+        barColor: _barColor,
+        onSeek: (ratio) {
+          // 1. 실제 오디오 탐색
+          PlayerLogic.seekTo(ratio);
 
-        // 2. 가사 동기화 (Undefined name 에러 해결 지점)
-        if (_totalDuration != null) {
-          final targetMs = _totalDuration!.inMilliseconds * ratio;
-          final targetPosition = Duration(milliseconds: targetMs.toInt());
+          // 2. 가사 동기화 (Undefined name 에러 해결 지점)
+          if (_totalDuration != null) {
+            final targetMs = _totalDuration!.inMilliseconds * ratio;
+            final targetPosition = Duration(milliseconds: targetMs.toInt());
 
-          // 가사 Notifier 업데이트
-          _positionNotifier.value = targetPosition; 
-          debugPrint("🎯 가사 수동 이동: $targetPosition");
-        }
-      },
-    ),
-  );
-}
+            // 가사 Notifier 업데이트
+            _positionNotifier.value = targetPosition;
+            debugPrint("🎯 가사 수동 이동: $targetPosition");
+          }
+        },
+      ),
+    );
+  }
 
   // --- 위젯 빌더 함수들 ---
 
