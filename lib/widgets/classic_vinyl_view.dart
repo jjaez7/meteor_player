@@ -385,120 +385,135 @@ void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
   }
 
 @override
-  Widget build(BuildContext context) {
-    int currentIndex = _calculateCurrentIndex();
-    final double responsiveRadius = widget.size * 0.12;
+Widget build(BuildContext context) {
+  int currentIndex = _calculateCurrentIndex();
+  final double responsiveRadius = widget.size * 0.12;
 
-    return GestureDetector(
-      onTap: widget.onClose,
-      child: Container(
-        width: widget.size,
-        height: widget.size,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(responsiveRadius),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 50,
-              spreadRadius: 5,
+  return GestureDetector(
+    onTap: widget.onClose,
+    child: Container(
+      width: widget.size,
+      height: widget.size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(responsiveRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 50,
+            spreadRadius: 5,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(responsiveRadius),
+        child: Stack(
+          children: [
+            // 🚀 레이어 1: 배경 블러 및 그라데이션 (RepaintBoundary로 격리)
+            // 가사가 움직여도 이 무거운 블러 연산은 다시 수행되지 않습니다.
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.1),
+                          Colors.white.withValues(alpha: 0.05),
+                        ],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
+
+            // 🚀 레이어 2: 가사 리스트 (RepaintBoundary로 격리)
+            // 가사가 스크롤될 때 "가사 레이어"만 다시 그리도록 제한합니다.
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: widget.lyrics.isEmpty
+                    ? _buildEmptyContent()
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final double width = constraints.maxWidth;
+                          final double responsiveBaseSize =
+                              (width * 0.05).clamp(16.0, 20.0);
+                          final double responsiveCurrentSize =
+                              (width * 0.065).clamp(20.0, 28.0);
+
+                          return NotificationListener<ScrollNotification>(
+                            onNotification: (notification) {
+                              if (notification is ScrollStartNotification) {
+                                _onUserInteraction();
+                              }
+                              return false;
+                            },
+                            child: ListWheelScrollView.useDelegate(
+                              controller: _scrollController,
+                              itemExtent: responsiveCurrentSize * 5.0,
+                              physics: const FixedExtentScrollPhysics(),
+                              clipBehavior: Clip.hardEdge,
+                              diameterRatio: 2.0,
+                              perspective: 0.002,
+                              childDelegate: ListWheelChildBuilderDelegate(
+                                childCount: widget.lyrics.length,
+                                builder: (context, index) {
+                                  final isCurrent = index == currentIndex;
+                                  return Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 30),
+                                      child: AnimatedDefaultTextStyle(
+                                        duration:
+                                            const Duration(milliseconds: 300),
+                                        style: TextStyle(
+                                          color: isCurrent
+                                              ? Colors.white
+                                              : Colors.white
+                                                  .withValues(alpha: 0.25),
+                                          fontSize: isCurrent
+                                              ? responsiveCurrentSize
+                                              : responsiveBaseSize,
+                                          fontWeight: isCurrent
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          height: 1.3,
+                                          letterSpacing: -0.5,
+                                        ),
+                                        child: Text(
+                                          widget.lyrics[index].text,
+                                          textAlign: TextAlign.center,
+                                          softWrap: true,
+                                          maxLines: 4,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
+
+            // 레이어 3: 하단 출처 표기 (텍스트 위젯)
+            if (widget.lyrics.isNotEmpty) _buildSourceTag(),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(responsiveRadius),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.1),
-                    Colors.white.withValues(alpha: 0.05),
-                  ],
-                ),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  width: 0.5,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: widget.lyrics.isEmpty
-                        ? _buildEmptyContent() // 가사 없을 때 화면 (하단에 정의)
-                        : LayoutBuilder(
-                            builder: (context, constraints) {
-                              final double width = constraints.maxWidth;
-                              final double responsiveBaseSize = (width * 0.05).clamp(16.0, 20.0);
-                              final double responsiveCurrentSize = (width * 0.065).clamp(20.0, 28.0);
-
-                              // 🚀 중요: NotificationListener를 추가해야 스크롤 상태를 감지합니다.
-                              return NotificationListener<ScrollNotification>(
-                                onNotification: (notification) {
-                                  if (notification is ScrollStartNotification) {
-                                    _onUserInteraction(); // 사용자가 만지면 자동 스크롤 일시 정지
-                                  }
-                                  return false;
-                                },
-                                child: ListWheelScrollView.useDelegate(
-                                  controller: _scrollController,
-                                  itemExtent: responsiveCurrentSize * 5.0,
-                                  physics: const FixedExtentScrollPhysics(),
-                                  clipBehavior: Clip.hardEdge,
-                                  diameterRatio: 2.0,
-                                  perspective: 0.002,
-                                  childDelegate: ListWheelChildBuilderDelegate(
-                                    childCount: widget.lyrics.length,
-                                    builder: (context, index) {
-                                      final isCurrent = index == currentIndex;
-                                      return Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 30),
-                                          child: AnimatedDefaultTextStyle(
-                                            duration: const Duration(milliseconds: 300),
-                                            style: TextStyle(
-                                              color: isCurrent
-                                                  ? Colors.white
-                                                  : Colors.white.withValues(alpha: 0.25),
-                                              fontSize: isCurrent
-                                                  ? responsiveCurrentSize
-                                                  : responsiveBaseSize,
-                                              fontWeight: isCurrent
-                                                  ? FontWeight.bold
-                                                  : FontWeight.normal,
-                                              height: 1.3,
-                                              letterSpacing: -0.5,
-                                            ),
-                                            child: Text(
-                                              widget.lyrics[index].text,
-                                              textAlign: TextAlign.center,
-                                              softWrap: true,
-                                              maxLines: 4,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  // 하단 출처 표기 (생략 가능)
-                  if (widget.lyrics.isNotEmpty)
-                    _buildSourceTag(),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // 가사 없을 때 화면 별도 추출
   Widget _buildEmptyContent() {
