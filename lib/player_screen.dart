@@ -242,7 +242,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       });
     });
 
-    _setLowRefreshRate();
+    /*_setLowRefreshRate();*/
   }
 
   void _handleInternalToggle() {
@@ -268,53 +268,64 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   LyricStatus _currentStatus = LyricStatus.loading;
   String _lastFetchedSongId = "";
+  int _lastRequestToken = 0;
+
   Future<void> _updateLyrics(dynamic item) async {
     _positionNotifier.value = Duration.zero;
-    String title;
-    String artist;
 
-    if (item is Map) {
-      title = item['title']?.toString() ?? "Unknown";
-      artist = item['artist']?.toString() ?? "Unknown";
-    } else {
-      title = item.title ?? "Unknown";
-      artist = item.artist ?? "Unknown";
-    }
+    // 1. 새로운 요청 토큰 생성
+    final int currentToken = ++_lastRequestToken;
 
+    String title = (item is Map)
+        ? (item['title'] ?? "Unknown")
+        : (item.title ?? "Unknown");
+    String artist = (item is Map)
+        ? (item['artist'] ?? "Unknown")
+        : (item.artist ?? "Unknown");
     final String currentId = "${title}_$artist";
 
-    // 이미 같은 곡의 가사를 가져왔다면 중단
-    if (_lastFetchedSongId == currentId) return;
+    // 중복 요청 방지 (ID와 데이터가 모두 동일할 때만 리턴)
+    if (_lastFetchedSongId == currentId && _lyrics.isNotEmpty) return;
     _lastFetchedSongId = currentId;
 
-    debugPrint("🎵 가사 업데이트 시도: $title");
-
-    // 가사 초기화 및 로딩 상태로 변경
     if (mounted) {
       setState(() {
         _lyrics = [];
-        _currentStatus = LyricStatus.loading; // 🚀 로딩 상태 시작
+        _currentStatus = LyricStatus.loading;
       });
     }
 
+    // 사용자가 곡을 빠르게 넘길 때(Debounce)를 위한 대기
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (currentToken != _lastRequestToken) return;
+
     try {
-      // 🚀 수정된 부분: result.lyrics와 result.status를 받아옵니다.
+      // 🚀 LyricsService 실행 (내부에서 1차~5차 시도 수행)
       final result = await LyricsService.getLyrics(title, artist);
 
-      if (mounted && _lastFetchedSongId == currentId) {
+      // [검증] 응답이 왔을 때 내 토큰이 최신인가?
+      if (mounted && currentToken == _lastRequestToken) {
         setState(() {
-          _lyrics = result.lyrics; // 가사 리스트 저장
-          _currentStatus =
-              result.status; // 🚀 서버에서 받은 실제 상태(success, noLyrics 등) 저장
+          _lyrics = result.lyrics;
+          _currentStatus = result.status;
         });
-        debugPrint(
-          "✅ 가사 결과 상태: ${result.status.name}, ${result.lyrics.length}줄",
-        );
+        debugPrint("✅ 가사 최종 반영: $title (Token: $currentToken)");
       }
     } catch (e) {
-      debugPrint("🚨 가사 로딩 실패 (심각한 에러): $e");
-      if (mounted) {
-        setState(() => _currentStatus = LyricStatus.networkError);
+      // 🚨 [가장 중요한 부분]
+      // LyricsService가 내부 재시도 중 에러를 던지더라도,
+      // 이미 가사가 들어온 상태(성공)라면 UI를 '네트워크 에러'로 덮어쓰지 않습니다.
+      if (mounted && currentToken == _lastRequestToken) {
+        if (_lyrics.isEmpty) {
+          debugPrint("🚨 가사 로드 실패(최종): $e");
+          setState(() {
+            _currentStatus = (e is TimeoutException)
+                ? LyricStatus.timeout
+                : LyricStatus.networkError;
+          });
+        } else {
+          debugPrint("💡 무시된 지연 에러: 이미 가사가 로드됨 ($title)");
+        }
       }
     }
   }
@@ -364,7 +375,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
   }
 
-  Future<void> _setLowRefreshRate() async {
+  /*Future<void> _setLowRefreshRate() async {
     try {
       // 주사율 제어 패키지 임포트가 필요합니다: import 'package:flutter_displaymode/flutter_displaymode.dart';
       final List<DisplayMode> modes = await FlutterDisplayMode.supported;
@@ -376,11 +387,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       );
 
       await FlutterDisplayMode.setPreferredMode(lowRefreshMode);
-      debugPrint("✅ 앱 전체 주as율 60Hz 고정 완료");
+      debugPrint("✅ 앱 전체 주사율 60Hz 고정 완료");
     } catch (e) {
       debugPrint("⚠️ 주사율 설정 실패 (지원하지 않는 기기일 수 있음): $e");
     }
-  }
+  }*/
 
   void _handleColorChange(Color newColor, String target) {
     setState(() {
@@ -828,7 +839,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     // 2. 가사 데이터 및 시간 동기화
                                     Future(() async {
                                       // 가사가 없으면 로딩
-                                      if (_lyrics.isEmpty) {
+                                      if (_lyrics.isEmpty &&
+                                          _currentStatus !=
+                                              LyricStatus.loading) {
                                         await _updateLyrics({
                                           'title': _currentTitle,
                                           'artist': _currentArtist,

@@ -61,7 +61,7 @@ void showTermsDialog(BuildContext context) {
                               child: Column(
                                 children: [
                                   Text(
-                                    "© 2026 REDHOOK PROJECT. ALL RIGHTS RESERVED.",
+                                    "© 2026 ZN LABS. ALL RIGHTS RESERVED.",
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 9,
@@ -120,7 +120,7 @@ void showTermsDialog(BuildContext context) {
                         child: Column(
                           children: [
                             Text(
-                              "© 2026 REDHOOK PROJECT. ALL RIGHTS RESERVED.",
+                              "© 2026 ZN LABS. ALL RIGHTS RESERVED.",
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 9,
@@ -236,7 +236,7 @@ Widget _buildTermsScrollArea(Size size, bool isLandscape) {
             _TermsSection(
               title: "5. Limitation of Liability",
               content:
-                  "METEOR PLAYER is provided 'AS IS'. The developers (Redhook Project) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
+                  "METEOR PLAYER is provided 'AS IS'. The developers (ZN LABS) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
             ),
           ],
         ),

@@ -43,7 +43,7 @@ void showCreatorDialog(BuildContext context) {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  "REDHOOK PROJECT",
+                  "ZN LABS",
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
@@ -76,7 +76,7 @@ void showCreatorDialog(BuildContext context) {
 
                 const SizedBox(height: 40),
                 Text(
-                  "\"So that your day can be sentimental\"",
+                  "\"Music, Visualized.\"",
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
