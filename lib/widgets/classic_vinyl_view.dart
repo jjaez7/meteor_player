@@ -220,28 +220,80 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
     }
   }
 
-  @override
-  void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        if (!_ticker.isTicking) _ticker.start();
-      } else {
-        _ticker.stop();
-      }
-    }
+  // _LyricsAutoScrollerState 클래스 내부
+void _forceResetInteraction() {
+  _debounceTimer?.cancel(); // 3초 타이머 취소
+  if (_isUserInteracting) {
+    setState(() {
+      _isUserInteracting = false; // 즉시 자동 스크롤 모드로 복귀
+    });
+  }
+}
 
-    if (widget.lyrics != oldWidget.lyrics || widget.currentPosition != oldWidget.currentPosition) {
-      _internalOffset = Duration.zero;
-      _lastIndex = _calculateCurrentIndex();
-      
-      if (!_isUserInteracting && _scrollController.hasClients) {
-        // 곡이 바뀌면 애니메이션 없이 즉시 이동
-        _scrollController.jumpToItem(_lastIndex >= 0 ? _lastIndex : 0);
-      }
+// classic_vinyl_view.dart 내부 _LyricsAutoScrollerState 클래스 수정
+
+// classic_vinyl_view.dart 내의 _LyricsAutoScrollerState 클래스 수정
+// classic_vinyl_view.dart 내 _LyricsAutoScrollerState 클래스 수정
+
+@override
+void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
+  super.didUpdateWidget(oldWidget);
+  
+  // 1. 재생 상태 변경 처리 (기존 유지)
+  if (widget.isPlaying != oldWidget.isPlaying) {
+    if (widget.isPlaying) {
+      if (!_ticker.isTicking) _ticker.start();
+    } else {
+      _ticker.stop();
     }
   }
+
+  // 🚀 2. 핵심: 외부/내부 어디서든 시간이 바뀌었을 때 감지
+  if (widget.currentPosition != oldWidget.currentPosition) {
+    
+    // [판단 기준] 
+    // - 시간이 거꾸로 갔을 때 (이전 곡/처음으로)
+    // - 시간 차이가 1.5초 이상 크게 났을 때 (시스템 진행바 조작)
+    // - 현재 시간이 거의 0초일 때
+    bool isExternalSeek = 
+        widget.currentPosition < oldWidget.currentPosition || 
+        (widget.currentPosition - oldWidget.currentPosition).abs().inMilliseconds > 1500 ||
+        widget.currentPosition.inMilliseconds < 200;
+
+    if (isExternalSeek) {
+      // 💡 여기서 핵심! 외부에서 조작해도 3초 대기를 풀어야 합니다.
+      _debounceTimer?.cancel();
+      
+      // setState를 직접 부르지 않아도 didUpdateWidget은 이미 리빌드 중이므로 
+      // 변수 값만 즉시 바꿔주면 됩니다.
+      _isUserInteracting = false; 
+
+      // Ticker 보정값 리셋
+      if (_ticker.isTicking) {
+        _ticker.stop();
+        _ticker.start();
+      }
+      _internalOffset = Duration.zero;
+      
+      int newIndex = _calculateCurrentIndex();
+      _lastIndex = newIndex;
+
+      // 즉시 스크롤 이동
+      if (_scrollController.hasClients) {
+        _scrollController.jumpToItem(newIndex >= 0 ? newIndex : 0);
+      }
+      
+      debugPrint("📢 외부/내부 시스템 조작 감지: 가사 동기화 및 고정 해제");
+    }
+  }
+
+  // 3. 곡 변경 시 처리 (기존 유지)
+  if (widget.lyrics != oldWidget.lyrics) {
+    _lastIndex = -1;
+    _internalOffset = Duration.zero;
+    if (_scrollController.hasClients) _scrollController.jumpToItem(0);
+  }
+}
 
   int _calculateCurrentIndex() {
     if (widget.lyrics.isEmpty) return -1;
@@ -280,6 +332,7 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
       }
     });
   }
+
 
   @override
   void dispose() {

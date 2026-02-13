@@ -1091,7 +1091,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
   // 2. 프로그레스 바 스트림 빌더
-  Widget _buildProgressBarStream(double barWidth) {
+Widget _buildProgressBarStream(double barWidth) {
     return SizedBox(
       key: _progressKey,
       width: barWidth,
@@ -1103,14 +1103,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           // 1. 실제 오디오 탐색
           PlayerLogic.seekTo(ratio);
 
-          // 2. 가사 동기화 (Undefined name 에러 해결 지점)
+          // 2. 가사 동기화
           if (_totalDuration != null) {
             final targetMs = _totalDuration!.inMilliseconds * ratio;
             final targetPosition = Duration(milliseconds: targetMs.toInt());
 
-            // 가사 Notifier 업데이트
-            _positionNotifier.value = targetPosition;
-            debugPrint("🎯 가사 수동 이동: $targetPosition");
+            // 🚀 핵심: setState를 사용하여 UI를 즉시 강제 갱신합니다.
+            // 리로딩 효과를 주어 엉뚱한 곳으로 튀는 것을 막아줍니다.
+            setState(() {
+              _positionNotifier.value = targetPosition;
+            });
+            
+            debugPrint("🎯 가사 수동 이동 및 화면 갱신: $targetPosition");
           }
         },
       ),
