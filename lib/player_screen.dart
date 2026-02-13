@@ -360,6 +360,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     WidgetsBinding.instance.removeObserver(this);
     _lpController.dispose();
     _needleController.dispose();
+    _positionNotifier.dispose();
     super.dispose();
   }
 
