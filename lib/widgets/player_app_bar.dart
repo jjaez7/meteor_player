@@ -83,7 +83,7 @@ return Container(
           Align(
             alignment: Alignment.center,
             child: Text(
-              "METEOR PLAYER",
+              "GLASNYL",
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2,

@@ -62,23 +62,33 @@ class ManualDialog extends StatelessWidget {
                     children: [
                       _buildManualItem(
                         Icons.album_rounded,
-                        "HIFI ACOUSTIC ENGINE",
-                        "Tap the center vinyl to toggle the playback state. The rotation speed is hardware-accelerated and synchronized with the core audio stream.",
+                        "HIFI VINYL INTERACTION",
+                        "• Single Tap: Toggle synchronized lyrics mode.\n• Double Tap: Switch view to high-resolution album artwork.\n• Long Press: Execute system cache cleaning and metadata refresh.",
                       ),
                       _buildManualItem(
-                        Icons.lock_clock_rounded,
-                        "NEURAL SCREEN LOCK",
-                        "Activate safety mode via the lock icon to prevent unintentional input. To restore access, perform a sustained 'Long Press' on the overlay.",
+                        Icons.linear_scale_rounded,
+                        "TIMELINE NAVIGATION",
+                        "The dynamic progress bar supports manual seeking. Slide to calibrate the playback position and instantly synchronize lyrics to the target timestamp.",
+                      ),
+                      _buildManualItem(
+                        Icons.settings_input_component_rounded,
+                        "LEFT ACCESS PANEL",
+                        "Use the top-left drop-down menu to trigger Picture-in-Picture (PiP) mode for multitasking or activate the Neural Screen Lock to prevent accidental touch input.",
+                      ),
+                      _buildManualItem(
+                        Icons.palette_outlined,
+                        "RIGHT CONTROL PANEL",
+                        "Access the top-right menu to modify the core interface. Customize theme colors and toggle Edit Mode to reconfigure UI module layouts and positions.",
                       ),
                       _buildManualItem(
                         Icons.layers_outlined,
                         "DYNAMIC INTERFACE EDIT",
-                        "Enter 'Edit Mode' from the primary menu to reconfigure UI modules. Drag and drop elements to calibrate your personalized acoustic workspace.",
+                        "Enter Edit Mode to transform the workspace. Drag modules to reposition them and use the resize handle to calibrate your personalized acoustic environment.",
                       ),
                       _buildManualItem(
                         Icons.analytics_outlined,
-                        "PERFORMANCE MONITOR",
-                        "Real-time frame monitoring is active. High-latency spikes (>300ms) trigger auto-optimization protocols to ensure a seamless experience.",
+                        "STABILITY MONITOR",
+                        "Hardware-accelerated rendering is active. High-latency spikes (>300ms) trigger auto-optimization protocols to ensure a 60FPS glassmorphism experience.",
                       ),
                     ],
                   ),
@@ -90,7 +100,7 @@ class ManualDialog extends StatelessWidget {
               Column(
                 children: [
                   Text(
-                    "METEOR OPERATING SYSTEM",
+                    "GLASNYL OPERATING SYSTEM",
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.4),
                       fontSize: 9,
@@ -100,7 +110,7 @@ class ManualDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "METEOR v$appVersion-RELEASE / STABLE",
+                    "GLASNYL v$appVersion-RELEASE / STABLE",
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.15),
                       fontSize: 8,
@@ -150,9 +160,9 @@ class ManualDialog extends StatelessWidget {
                   desc,
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 11.5,
-                    height: 1.6,
-                    fontFamily: 'monospace', // 기계적인 느낌을 주기 위해 모노스페이스 권장
+                    fontSize: 11,
+                    height: 1.5,
+                    fontFamily: 'monospace',
                   ),
                 ),
               ],

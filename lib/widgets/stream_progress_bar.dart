@@ -21,7 +21,7 @@ class StreamProgressBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder(
       // 부모 위젯과 별개로 이 스트림만 감시합니다.
-      stream: const EventChannel('com.meteor.player/media_status').receiveBroadcastStream(),
+      stream: const EventChannel('com.glasnyl.app/media_status').receiveBroadcastStream(),
       builder: (context, snapshot) {
         double currentFactor = 0.0;
         int duration = 1;

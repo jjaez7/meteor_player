@@ -1,4 +1,4 @@
-package com.example.mp_design
+package com.glasnyl.app
 
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,9 +27,9 @@ import android.graphics.drawable.Icon
 import android.os.Build
 
 class MainActivity: AudioServiceActivity() {
-    private val METHOD_CHANNEL = "com.meteor.player/media_control"
-    private val EVENT_CHANNEL = "com.meteor.player/media_status"
-    private val PIP_CHANNEL = "com.meteor.player/pip_status"
+    private val METHOD_CHANNEL = "com.glasnyl.app/media_control"
+    private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
+    private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastTitle: String? = null
@@ -250,7 +250,7 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                     "duration" to 0L,
                     "isPlaying" to false, // 엔진을 멈추게 함
                     "title" to "Ready to Play",
-                    "artist" to "METEOR PLAYER",
+                    "artist" to "GLASNYL",
                     "albumArt" to ByteArray(0)
                 )
             }

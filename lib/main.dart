@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:mp_design/permission_guard.dart';
+import 'package:glasnyl/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/lyrics_service.dart';
@@ -27,8 +27,8 @@ void main() async {
     AudioService.init(
       builder: () => MyAudioHandler(),
       config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.meteor.player.audio',
-        androidNotificationChannelName: 'Meteor Player Control',
+        androidNotificationChannelId: 'com.glasnyl.app.audio',
+        androidNotificationChannelName: 'GLASNYL Control',
         androidShowNotificationBadge: true,
         androidStopForegroundOnPause: false,
       ),
@@ -54,16 +54,16 @@ void main() async {
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  runApp(MeteorPlayer(isFirstRun: isFirstRun));
+  runApp(GlasnylPlayer(isFirstRun: isFirstRun));
 }
 
 
 class MyAudioHandler extends BaseAudioHandler {
   static const MethodChannel _nativeChannel = MethodChannel(
-    'com.meteor.player/media_control',
+    'com.glasnyl.app/media_control',
   );
   static const EventChannel _statusChannel = EventChannel(
-    'com.meteor.player/media_status',
+    'com.glasnyl.app/media_status',
   );
 
   List<LyricLine> currentLyrics = [];
@@ -175,9 +175,9 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> skipToPrevious() async => await _invokeNativeMediaKey(88);
 }
 
-class MeteorPlayer extends StatelessWidget {
+class GlasnylPlayer extends StatelessWidget {
   final bool isFirstRun;
-  const MeteorPlayer({super.key, required this.isFirstRun});
+  const GlasnylPlayer({super.key, required this.isFirstRun});
 
 
   @override

@@ -71,7 +71,7 @@ void showTermsDialog(BuildContext context) {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    "METEOR OS ENGINE v$appVersion",
+                                    "GLASNYL OS ENGINE v$appVersion",
                                     style: TextStyle(
                                       color: accentColor, // 포인트 컬러 사용
                                       fontSize: 8,
@@ -130,7 +130,7 @@ void showTermsDialog(BuildContext context) {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              "METEOR OS ENGINE v$appVersion",
+                              "GLASNYL OS ENGINE v$appVersion",
                               style: TextStyle(
                                 color: accentColor, // 포인트 컬러 사용
                                 fontSize: 8,
@@ -216,7 +216,7 @@ Widget _buildTermsScrollArea(Size size, bool isLandscape) {
             _TermsSection(
               title: "1. Service Overview",
               content:
-                  "METEOR PLAYER is a local media player tool. It does not provide, host, or distribute any digital content. Users are solely responsible for the media files on their device.",
+                  "GLASNYL is a local media player tool. It does not provide, host, or distribute any digital content. Users are solely responsible for the media files on their device.",
             ),
             _TermsSection(
               title: "2. Data Privacy (No Collection)",
@@ -236,7 +236,7 @@ Widget _buildTermsScrollArea(Size size, bool isLandscape) {
             _TermsSection(
               title: "5. Limitation of Liability",
               content:
-                  "METEOR PLAYER is provided 'AS IS'. The developers (ZN LABS) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
+                  "GLASNYL is provided 'AS IS'. The developers (ZN LABS) are not liable for any data loss, device damage, or legal issues arising from the use of this app.",
             ),
           ],
         ),

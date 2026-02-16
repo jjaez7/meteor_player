@@ -1,3 +1,13 @@
+import java.util.Properties
+import java.io.FileInputStream
+
+// 1. 키 정보 파일(key.properties)을 읽어오는 로직 추가
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,9 +15,19 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mp_design"
+    namespace = "com.glasnyl.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    // 2. 서명 설정(signingConfigs) 추가
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -19,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.mp_design"
+        applicationId = "com.glasnyl.app"
         minSdk = flutter.minSdkVersion 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -30,16 +50,15 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            // 3. 배포용 서명 설정 적용 (기존 debug 대신 release로 변경)
+            signingConfig = signingConfigs.getByName("release")
             
-            // [수정] 아래 두 설정을 모두 false로 하여 빌드 에러 방지 및 서비스 클래스 보존
             isMinifyEnabled = false
             isShrinkResources = false 
             
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // [수정] 디버그 모드에서도 동일하게 설정
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

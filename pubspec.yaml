@@ -1,4 +1,4 @@
-name: mp_design
+name: glasnyl
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.7+7
+version: 1.0.2+2
 
 environment:
   sdk: ^3.10.7
@@ -50,6 +50,8 @@ dependencies:
   http: ^1.6.0
   translator: ^1.0.4+1
   flutter_displaymode: ^0.7.0
+  wakelock_plus: ^1.2.8
+  change_app_package_name: ^1.5.0
   
 dev_dependencies:
   flutter_test:
@@ -62,6 +64,8 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   just_audio: ^0.10.5
+  flutter_launcher_icons: ^0.14.4
+
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -112,3 +116,9 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#1A1A1A"
+  adaptive_icon_foreground: "assets/icon.png"

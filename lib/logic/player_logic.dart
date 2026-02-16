@@ -67,7 +67,7 @@ class PlayerLogic {
   /// relativePos: 0.0 ~ 1.0 사이의 비율
   static Future<void> seekTo(double relativePos) async {
     try {
-      const platform = MethodChannel('com.meteor.player/media_control');
+      const platform = MethodChannel('com.glasnyl.app/media_control');
       // 비율(0.0~1.0)을 네이티브로 직접 쏩니다.
       await platform.invokeMethod('seek', {'position': relativePos.clamp(0.0, 1.0)});
     } catch (e) {

@@ -192,7 +192,7 @@ class PermissionGuardState extends State<PermissionGuard>
           // 🚀 이제 isSyncing이 아니라 isExitWarning을 true로 보냅니다.
           showTopStatusAlarm(isExitWarning: true);
 
-          debugPrint("Meteor OS: Press back again to shutdown.");
+          debugPrint("GLASNYL OS: Press back again to shutdown.");
         } else {
           exit(0);
         }
@@ -416,7 +416,7 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
     } else if (widget.isSyncing) {
       // ✅ 기존에 찾으시던 로직 그대로 유지!
       label = _showVersion
-          ? "METEOR ENGINE STABILIZED"
+          ? "GLASYNL ENGINE STABILIZED"
           : "SYSTEM RE-SYNCING...";
     } else if (widget.isLag) {
       label = _showVersion
@@ -424,8 +424,8 @@ class _TopAlarmWidgetState extends State<_TopAlarmWidget>
           : "PERFORMANCE DROP: ${widget.lagMs}ms";
     } else {
       label = _showVersion
-          ? "METEOR OS v$appVersion CORE ONLINE"
-          : "SYSTEM READY: METEOR ONLINE";
+          ? "GLASNYL OS v$appVersion CORE ONLINE"
+          : "SYSTEM READY: GLASNYL ONLINE";
     }
 
     return SafeArea(

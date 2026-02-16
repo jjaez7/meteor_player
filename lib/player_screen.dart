@@ -22,7 +22,7 @@ import 'features/screen_lock.dart';
 //import 'features/pip_handler.dart';
 import 'services/lyrics_service.dart';
 import 'dart:async';
-import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -105,7 +105,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   DateTime? _lastSyncTime;
 
   String _currentTitle = "Ready to Play";
-  String _currentArtist = "METEOR PLAYER";
+  String _currentArtist = "Artist NAME";
   Uint8List? _albumArtBytes;
 
   List<dynamic> _lyrics = [];
@@ -121,7 +121,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _barColor = const Color(0xFFB1A1D0);
   Color _playBtnColor = const Color(0xFF735DA5);
 
-  static const _pipChannel = MethodChannel('com.meteor.player/pip_status');
+  static const _pipChannel = MethodChannel('com.glasnyl.app/pip_status');
 
   @override
   void initState() {
@@ -160,6 +160,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           break;
       }
     });
+    WakelockPlus.enable();
 
     // 1. 애니메이션 컨트롤러 초기화 (addListener는 계속 삭제된 상태 유지)
     _lpController = AnimationController(
@@ -358,6 +359,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void dispose() {
     // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
     WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
     _lpController.dispose();
     _needleController.dispose();
     _positionNotifier.dispose();
@@ -479,7 +481,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
 
     const EventChannel(
-      'com.meteor.player/media_status',
+      'com.glasnyl.app/media_status',
     ).receiveBroadcastStream().listen((status) {
       if (status is Map && status['position'] != null) {
         final int incomingPos = status['position'];
@@ -574,7 +576,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   Future<void> _fetchInitialStatus() async {
     try {
-      const platform = MethodChannel('com.meteor.player/media_control');
+      const platform = MethodChannel('com.glasnyl.app/media_control');
       final dynamic result = await platform.invokeMethod('getCurrentStatus');
 
       if (result != null && mounted) {
@@ -584,16 +586,26 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         // 🚀 [개선 1] 재귀 호출 대신 가벼운 텍스트 먼저 렌더링
         // 앨범 아트가 없어도 제목/가수 정보는 먼저 띄워야 검은 화면을 탈출합니다.
         setState(() {
-          _currentTitle = data['title'] ?? "Ready to Play";
-          _currentArtist = (data['artist'] ?? "METEOR PLAYER").toUpperCase();
-          _isPlaying = data['isPlaying'] ?? false;
+        _currentTitle = data['title'] ?? "Ready to Play";
+        _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
+        _isPlaying = data['isPlaying'] ?? false;
 
-          if (data['duration'] != null) {
-            final int durMs = (data['duration'] as num).toInt();
+        // 🚀 [수정] 전체 길이 동기화 로직 강화
+        if (data['duration'] != null) {
+          final int durMs = (data['duration'] as num).toInt();
+          
+          if (durMs > 0) {
             _totalDuration = Duration(milliseconds: durMs);
             debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
+          } else {
+            // ⚠️ 길이가 0이라면 시스템이 아직 정보를 준비 못한 것임
+            debugPrint("⚠️ 전체 길이 정보가 0입니다. 1초 후 재시도합니다.");
+            Future.delayed(const Duration(seconds: 1), () {
+              if (mounted) _fetchInitialStatus(); // 1초 뒤 한 번 더 데이터 요청
+            });
           }
-        });
+        }
+      });
 
         // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
         if (_isPlaying) {
@@ -851,7 +863,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                                       try {
                                         const platform = MethodChannel(
-                                          'com.meteor.player/media_control',
+                                          'com.glasnyl.app/media_control',
                                         );
                                         final dynamic result = await platform
                                             .invokeMethod('getCurrentStatus');

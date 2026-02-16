@@ -32,7 +32,7 @@ void showCreatorDialog(BuildContext context) {
                 _buildGlassContainer(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: const Text(
-                    "METEOR PLAYER",
+                    "GLASNYL",
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w900,

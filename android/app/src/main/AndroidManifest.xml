@@ -13,10 +13,11 @@
     
     
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <application
-        android:label="mp_design"
+        android:label="GLASNYL"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         android:enableOnBackInvokedCallback="true">
         
         <activity
@@ -56,7 +57,7 @@
         </receiver>
 
         <service android:name="notification.listener.service.NotificationListener"
-                 android:label="Vinyl Player Listener"
+                 android:label="Glasnyl Media Sync"
                  android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
                  android:exported="true">
             <intent-filter>

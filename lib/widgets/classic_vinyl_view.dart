@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mp_design/services/lyrics_service.dart';
+import 'package:glasnyl/services/lyrics_service.dart';
 import 'vinyl_component.dart';
 import 'dart:ui';
 import '../models/lyric_model.dart';
