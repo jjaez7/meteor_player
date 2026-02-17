@@ -25,8 +25,20 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.drawable.Icon
 import android.os.Build
+import androidx.core.view.WindowCompat
+import android.os.Bundle
 
 class MainActivity: AudioServiceActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = 
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        super.onCreate(savedInstanceState)
+    }
     private val METHOD_CHANNEL = "com.glasnyl.app/media_control"
     private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
     private val PIP_CHANNEL = "com.glasnyl.app/pip_status"

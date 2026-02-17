@@ -702,6 +702,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         return Scaffold(
           backgroundColor: Colors.transparent,
+
+          extendBody: true,
+          extendBodyBehindAppBar: true,
+          
           body: AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             curve: Curves.easeInOut,

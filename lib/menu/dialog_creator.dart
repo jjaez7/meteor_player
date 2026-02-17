@@ -6,17 +6,22 @@ void showCreatorDialog(BuildContext context) {
   final bool isLandscape = size.width > size.height;
   
   // 요즘 감성의 화이트/퍼플 글래스 팔레트
-  const Color accentColor = Color(0xFFD1C4E9); // 연한 보라 (유리 위에서 잘 보임)
+  const Color accentColor = Color(0xFFD1C4E9); // 연한 보라
   
+  // 베타 테스터 명단 (12명 예시 이름)
+  final List<String> betaTesters = [
+    "Jaewon Jo", "Myungwan Jeong", "Jonghyun Yang", "Siwon Park",
+    "Sieun Park", "Tester 6", "Tester 7", "Tester 8",
+    "Tester 9", "Tester 10", "Tester 11", "Tester 12"
+  ];
+
   showDialog(
     context: context,
     builder: (context) => BackdropFilter(
-      // [핵심] 다이얼로그 뒤쪽 배경을 블러 처리하여 깊이감 형성
       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
       child: AlertDialog(
-        backgroundColor: Colors.white.withValues(alpha: 0.1), // 투명한 배경
+        backgroundColor: Colors.white.withValues(alpha: 0.1),
         surfaceTintColor: Colors.transparent,
-        // 테두리에 얇은 빛(Border)을 주어 유리의 두께감 표현
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(30),
           side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
@@ -28,7 +33,7 @@ void showCreatorDialog(BuildContext context) {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 1. 상단 로고 배지 (Glass Badge)
+                // 1. 상단 로고 배지
                 _buildGlassContainer(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: const Text(
@@ -53,7 +58,7 @@ void showCreatorDialog(BuildContext context) {
                 ),
                 const SizedBox(height: 30),
 
-                // 2. 가로/세로 대응 카드 섹션
+                // 2. 가로/세로 대응 제작자 카드 섹션
                 isLandscape
                     ? Row(
                         children: [
@@ -73,6 +78,33 @@ void showCreatorDialog(BuildContext context) {
                           _buildCreatorRow("Myungwan Jeong", "Special Thanks To", accentColor),
                         ],
                       ),
+
+                const SizedBox(height: 35),
+
+                // --- 베타 테스터 섹션 추가 ---
+                Row(
+                  children: [
+                    const Expanded(child: Divider(color: Colors.white24, endIndent: 10)),
+                    Text(
+                      "BETA TESTERS",
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: accentColor.withValues(alpha: 0.8),
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const Expanded(child: Divider(color: Colors.white24, indent: 10)),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: betaTesters.map((name) => _buildTesterChip(name)).toList(),
+                ),
+                // --------------------------
 
                 const SizedBox(height: 40),
                 Text(
@@ -99,7 +131,6 @@ void showCreatorDialog(BuildContext context) {
 
 // --- 글래스모피즘 전용 위젯 빌더 ---
 
-// 1. 공통 유리 컨테이너
 Widget _buildGlassContainer({required Widget child, EdgeInsets? padding, double borderRadius = 20}) {
   return Container(
     padding: padding ?? const EdgeInsets.all(16),
@@ -112,7 +143,6 @@ Widget _buildGlassContainer({required Widget child, EdgeInsets? padding, double 
   );
 }
 
-// 2. 가로형 카드
 Widget _buildCreatorCard(String name, String role, Color accent) {
   return _buildGlassContainer(
     child: Column(
@@ -127,7 +157,6 @@ Widget _buildCreatorCard(String name, String role, Color accent) {
   );
 }
 
-// 3. 세로형 로우
 Widget _buildCreatorRow(String name, String role, Color accent) {
   return _buildGlassContainer(
     child: Row(
@@ -146,7 +175,26 @@ Widget _buildCreatorRow(String name, String role, Color accent) {
   );
 }
 
-// 4. 유리 버튼
+// 베타 테스터용 미니 유리 칩
+Widget _buildTesterChip(String name) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+    ),
+    child: Text(
+      name,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        color: Colors.white70,
+      ),
+    ),
+  );
+}
+
 Widget _buildGlassButton(BuildContext context, String label, Color accent) {
   return GestureDetector(
     onTap: () => Navigator.pop(context),
