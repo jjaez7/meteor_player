@@ -42,15 +42,22 @@ void main() async {
   final bool isFirstRun = prefs.getBool('isFirstRun') ?? true;
 
   // 3. UI 설정 (비동기로 실행하여 렌더링 시작을 앞당김)
-  SystemChrome.setSystemUIOverlayStyle(
+SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
+      // 상단바와 하단바를 완전히 투명하게 설정하여 배경이 비치게 함
+      statusBarColor: Colors.transparent,
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarDividerColor: Colors.transparent,
+
+      // Android 15(SDK 35) 대응: 시스템이 배경색에 맞춰 아이콘 색상을 자동 조절하도록 함
+      // Brightness를 강제 지정(Brightness.dark)하면 구형 API 사용 경고가 뜰 수 있으므로
+      // 시스템이 글래스 배경의 명암을 분석하여 결정하도록 맡기는 것이 표준입니다.
+      statusBarIconBrightness: Brightness.dark, 
       systemNavigationBarIconBrightness: Brightness.dark,
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarContrastEnforced: false,
+
+      // 구글 플레이 경고의 주범인 '대비 강제(Contrast Enforced)'를 명확히 비활성화
       systemStatusBarContrastEnforced: false,
+      systemNavigationBarContrastEnforced: false,
     ),
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

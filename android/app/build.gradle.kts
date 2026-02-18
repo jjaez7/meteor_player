@@ -1,7 +1,7 @@
 import java.util.Properties
 import java.io.FileInputStream
 
-// 1. 키 정보 파일(key.properties)을 읽어오는 로직 추가
+// 1. 키 정보 파일(key.properties)을 읽어오는 로직
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -50,18 +50,20 @@ android {
 
     buildTypes {
         release {
-            // 3. 배포용 서명 설정 적용 (기존 debug 대신 release로 변경)
+            // 배포용 서명 설정 적용
             signingConfig = signingConfigs.getByName("release")
             
-            isMinifyEnabled = false
-            isShrinkResources = false 
+            // [수정] 코드 최적화 및 난독화 활성화
+            isMinifyEnabled = true 
+            isShrinkResources = true 
             
+            // R8 가독화 파일(mapping.txt)을 생성하기 위한 설정
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             isMinifyEnabled = false
             isShrinkResources = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }

@@ -27,6 +27,7 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.core.view.WindowCompat
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 
 class MainActivity: AudioServiceActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
