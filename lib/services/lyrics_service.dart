@@ -94,6 +94,7 @@ class LyricsService {
   }
 
   /// 🌐 실제 API 호출 로직
+  /// 🌐 실제 API 호출 로직 수정
   static Future<LyricResult> _executeFetch(String title, String artist) async {
     final cleanArtist = (artist == "Unknown" || artist == "알 수 없는 아티스트" || artist == "") ? "" : artist;
     final url = Uri.parse(
@@ -102,7 +103,8 @@ class LyricsService {
 
     try {
       debugPrint("🌐 [API 호출] $url");
-      final response = await http.get(url).timeout(const Duration(seconds: 7));
+      // 🚀 타임아웃을 7초에서 12초 정도로 늘려줍니다.
+      final response = await http.get(url).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));
@@ -114,7 +116,12 @@ class LyricsService {
           return LyricResult(parsed, LyricStatus.success);
         }
       } 
+      // 404 등 가사가 없는 경우
       return LyricResult([], LyricStatus.noLyrics);
+    } on TimeoutException catch (_) {
+      // 🚀 타임아웃 에러를 명확히 구분해서 던집니다.
+      debugPrint("🚨 [타임아웃] 서버 응답 지연");
+      return LyricResult([], LyricStatus.timeout);
     } catch (e) {
       debugPrint("🚨 [에러] $e");
       return LyricResult([], LyricStatus.networkError);
