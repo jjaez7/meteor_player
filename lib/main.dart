@@ -8,7 +8,7 @@ import 'player_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/lyrics_service.dart';
 import 'models/lyric_model.dart';
-
+import 'services/ad_service.dart';
 
 String appVersion="1.0.0";
 
@@ -18,10 +18,15 @@ void main() async {
   // 1. 바인딩 초기화
   WidgetsFlutterBinding.ensureInitialized();
 
+
+
+  // 2. 앱 설정 로드
+  await AdService.initInstallTime();
+
   final packageInfo = await PackageInfo.fromPlatform();
   appVersion = packageInfo.version;
 
-  // 2. 초기 로드 (병렬 처리로 시간 단축)
+  // 3. 초기 로드 (SharedPreferences와 AudioService를 병렬로 초기화)
   final results = await Future.wait([
     SharedPreferences.getInstance(),
     AudioService.init(
@@ -38,24 +43,16 @@ void main() async {
   final prefs = results[0] as SharedPreferences;
   audioHandler = results[1] as MyAudioHandler;
 
-
   final bool isFirstRun = prefs.getBool('isFirstRun') ?? true;
 
-  // 3. UI 설정 (비동기로 실행하여 렌더링 시작을 앞당김)
-SystemChrome.setSystemUIOverlayStyle(
+  // 4. UI 설정
+  SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      // 상단바와 하단바를 완전히 투명하게 설정하여 배경이 비치게 함
       statusBarColor: Colors.transparent,
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarDividerColor: Colors.transparent,
-
-      // Android 15(SDK 35) 대응: 시스템이 배경색에 맞춰 아이콘 색상을 자동 조절하도록 함
-      // Brightness를 강제 지정(Brightness.dark)하면 구형 API 사용 경고가 뜰 수 있으므로
-      // 시스템이 글래스 배경의 명암을 분석하여 결정하도록 맡기는 것이 표준입니다.
-      statusBarIconBrightness: Brightness.dark, 
+      statusBarIconBrightness: Brightness.dark,
       systemNavigationBarIconBrightness: Brightness.dark,
-
-      // 구글 플레이 경고의 주범인 '대비 강제(Contrast Enforced)'를 명확히 비활성화
       systemStatusBarContrastEnforced: false,
       systemNavigationBarContrastEnforced: false,
     ),
@@ -63,6 +60,11 @@ SystemChrome.setSystemUIOverlayStyle(
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   runApp(GlasnylPlayer(isFirstRun: isFirstRun));
+
+    // 🚀 [수정 핵심] 광고 초기화를 비동기로 처리 (await 제거)
+  // 이렇게 해야 광고 로딩 때문에 음악 정보(네이티브 채널) 연결이 끊기지 않습니다.
+  AdService.initAdmobWithDelay();
+  
 }
 
 
@@ -101,44 +103,48 @@ class MyAudioHandler extends BaseAudioHandler {
     );
 
     // 🚀 네이티브 스트림 최적화
-    _statusChannel.receiveBroadcastStream().listen((data) async{
-      final mediaData = Map<String, dynamic>.from(data);
-      final bool isPlaying = mediaData['isPlaying'] ?? false;
-      final String newTitle = mediaData['title'] ?? 'Unknown';
-      final String newArtist = mediaData['artist'] ?? 'Unknown';
-      final int incomingPos = mediaData['position'] as int;
+    _statusChannel.receiveBroadcastStream().listen((data) async {
+      try {
+        if (data == null) return;
+        final mediaData = Map<String, dynamic>.from(data);
 
-      // 🚀 [수정 핵심] 시스템이 보내는 0초 데이터를 방어합니다.
-      // 재생 중인데 갑자기 0이 들어오면 무시하고 리턴합니다.
-      if (isPlaying && incomingPos <= 0) {
-        // debugPrint("🚫 핸들러: 시스템의 잘못된 0초 신호 차단");
-        return; // 이 신호는 무시하고 다음 신호를 기다립니다.
-      }
+        // 데이터 타입 안전하게 추출 (num으로 받고 toInt 처리)
+        final String newTitle = mediaData['title']?.toString() ?? 'Unknown';
+        final String newArtist = mediaData['artist']?.toString() ?? 'Unknown';
+        final bool isPlaying = mediaData['isPlaying'] as bool? ?? false;
+        final int incomingPos = (mediaData['position'] as num? ?? 0).toInt();
+        final int durationMs = (mediaData['duration'] as num? ?? 0).toInt();
 
-      // 1. 재생 상태 업데이트 (포지션 정보는 자주 바뀌어도 됨)
-      playbackState.add(
-        playbackState.value.copyWith(
-          playing: isPlaying,
-          updatePosition: Duration(milliseconds: incomingPos),
-          bufferedPosition: Duration(milliseconds: incomingPos),
-          speed: isPlaying ? 1.0 : 0.0,
-        ),
-      );
+        // 0초 데이터 방어
+        if (isPlaying && incomingPos <= 0 && mediaItem.value?.title == newTitle) return;
 
-      // 2. 🚀 미디어 아이템 업데이트 (제목이 바뀌었을 때만 수행하여 렉 방지)
-      if (mediaItem.value?.title != newTitle) {
-        mediaItem.add(
-          MediaItem(
-            id: 'external_media',
-            album: 'External Player',
-            title: newTitle,
-            artist: newArtist,
-            duration: Duration(milliseconds: mediaData['duration'] as int),
+        // 재생 상태 업데이트
+        playbackState.add(
+          playbackState.value.copyWith(
+            playing: isPlaying,
+            updatePosition: Duration(milliseconds: incomingPos),
+            bufferedPosition: Duration(milliseconds: incomingPos),
+            speed: isPlaying ? 1.0 : 0.0,
           ),
         );
-        _updateLyrics(newTitle, newArtist);
+
+        // 곡 제목이 바뀌었을 때만 메타데이터/가사 갱신
+        if (mediaItem.value?.title != newTitle) {
+          mediaItem.add(
+            MediaItem(
+              id: 'external_media',
+              album: 'External Player',
+              title: newTitle,
+              artist: newArtist,
+              duration: Duration(milliseconds: durationMs),
+            ),
+          );
+          _updateLyrics(newTitle, newArtist);
+        }
+      } catch (e) {
+        debugPrint("🚨 리스너 에러 방어: $e"); // 에러가 나도 리스너는 죽지 않음
       }
-    });
+    }, onError: (err) => debugPrint("🚨 스트림 에러: $err"));
   }
 
   Future<void> _invokeNativeMediaKey(int keyCode) async {

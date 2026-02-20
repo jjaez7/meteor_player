@@ -18,7 +18,6 @@ class VinylDisk extends StatelessWidget {
     this.title = "",
     this.artist = "",
   });
-  
 
   @override
   Widget build(BuildContext context) {
@@ -27,12 +26,17 @@ class VinylDisk extends StatelessWidget {
           ? Image.memory(
               albumArtBytes!,
               fit: BoxFit.cover,
-              filterQuality: FilterQuality.low, // 👈 성능을 위해 회전 중에는 low/medium 추천
+              filterQuality:
+                  FilterQuality.low, // 👈 성능을 위해 회전 중에는 low/medium 추천
               gaplessPlayback: true,
             )
           : Container(
               color: const Color(0xFF2D2D44),
-              child: const Icon(Icons.music_note, color: Colors.white10, size: 50),
+              child: const Icon(
+                Icons.music_note,
+                color: Colors.white10,
+                size: 50,
+              ),
             ),
     );
 
@@ -67,14 +71,22 @@ class VinylDisk extends StatelessWidget {
                 ),
 
                 // 동심원 홈 (Opacity 조절로 소프트 레이어 구현)
-                ...List.generate(3, (index) => Container(
-                  width: size * (0.95 - (index * 0.2)),
-                  height: size * (0.95 - (index * 0.2)),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 0.5),
+                ...List.generate(
+                  20,
+                  (index) => Container(
+                    width: size * (0.97 - (index * 0.032)),
+                    height: size * (0.97 - (index * 0.032)),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: index % 4 == 0 ? 0.05 : 0.02,
+                        ), // 👈 밀도감
+                        width: 0.5,
+                      ),
+                    ),
                   ),
-                )),
+                ),
 
                 // 중앙 라벨 (텍스트)
                 IgnorePointer(
@@ -83,12 +95,13 @@ class VinylDisk extends StatelessWidget {
                     height: size * 0.45,
                     child: CustomPaint(
                       painter: CircularTextPainter(
-                        text: "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
+                        text:
+                            "${title.toUpperCase()}  •  ${artist.toUpperCase()}  ",
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          fontSize: size * 0.024,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 2.5,
+                          color: const Color(0xFFFFE082).withValues(alpha: 0.4),
+                          fontSize: size * 0.022,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 2.0,
                         ),
                       ),
                     ),
@@ -101,7 +114,10 @@ class VinylDisk extends StatelessWidget {
                   height: size * 0.38,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 2),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 2,
+                    ),
                   ),
                   child: albumArt,
                 ),
@@ -129,19 +145,25 @@ class VinylDisk extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // 3. 중앙 핀
-          Container(
-            width: 8,
-            height: 8,
+          /*Container(
+            width: 10, // 8에서 조금 키워도 좋습니다.
+            height: 10,
             decoration: BoxDecoration(
-              color: Colors.white,
+              // color: Colors.white, 대신 아래 그라데이션 적용
+              gradient: RadialGradient(
+                colors: [const Color(0xFFFFD54F), const Color(0xFF795548)],
+              ),
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: const Color(0xFFD1C4E9).withValues(alpha: 0.5), blurRadius: 8),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 4,
+                ),
               ],
             ),
-          ),
+          ),*/
         ],
       ),
     );
@@ -182,24 +204,45 @@ class VinylNeedle extends StatelessWidget {
                     children: [
                       // 바늘 암 (반투명 라인)
                       Container(
-                        width: 4,
-                        height: height * 0.75,
+                        width: 5,
+                        height: height * 0.7,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
+                          gradient: LinearGradient(
+                            // 👈 실버 크롬 느낌
+                            colors: [Colors.grey[400]!, Colors.grey[700]!],
+                          ),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                       // 헤드쉘 (블러 대신 반투명 컬러 레이어링)
                       Container(
-                        width: 20,
-                        height: 35,
+                        width: 24,
+                        height: 40,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3A3A4A).withValues(alpha: 0.8), // 👈 고정색으로 처리
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                          color: const Color(0xFF1A1A1A),
+                          borderRadius: const BorderRadius.only(
+                            // 👈 비대칭 디자인
+                            bottomLeft: Radius.circular(4),
+                            bottomRight: Radius.circular(12),
+                            topLeft: Radius.circular(4),
+                            topRight: Radius.circular(4),
+                          ),
+                          border: Border.all(color: Colors.white12),
                         ),
                         child: Center(
-                          child: Container(width: 2, height: 12, color: Colors.white24),
+                          child: Column(
+                            // 🚀 기계적인 슬릿 효과
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              3,
+                              (_) => Container(
+                                margin: const EdgeInsets.symmetric(vertical: 2),
+                                width: 12,
+                                height: 1,
+                                color: Colors.white10,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -222,13 +265,13 @@ class _GlassNeedlePivot extends StatelessWidget {
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: const Color(0xFF2D2D34), // 👈 투명한 화이트보다 묵직한 다크 그레이
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFD1C4E9).withValues(alpha: 0.1),
-            blurRadius: 20,
+            color: Colors.black45, // 👈 보라색 그림자보다 리얼한 검정 그림자
+            blurRadius: 15,
             spreadRadius: 2,
           ),
         ],
@@ -250,7 +293,9 @@ class _GlassNeedlePivot extends StatelessWidget {
 class CircularTextPainter extends CustomPainter {
   final String text;
   final TextStyle style;
-  final TextPainter _textPainter = TextPainter(textDirection: TextDirection.ltr); // 👈 밖으로 추출
+  final TextPainter _textPainter = TextPainter(
+    textDirection: TextDirection.ltr,
+  ); // 👈 밖으로 추출
 
   CircularTextPainter({required this.text, required this.style});
 
@@ -274,7 +319,10 @@ class CircularTextPainter extends CustomPainter {
       canvas.save();
       canvas.translate(x, y);
       canvas.rotate(charAngle + math.pi / 2);
-      _textPainter.paint(canvas, Offset(-_textPainter.width / 2, -_textPainter.height / 2));
+      _textPainter.paint(
+        canvas,
+        Offset(-_textPainter.width / 2, -_textPainter.height / 2),
+      );
       canvas.restore();
     }
   }

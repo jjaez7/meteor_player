@@ -122,28 +122,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   isLastPage ? "START!" : "NEXT",
                   () async {
                     if (isLastPage) {
-                      // 🚀 1. 미디어 권한 요청 (시스템 팝업 실행)
                       if (Platform.isAndroid) {
-                        try {
-                          // 오디오 권한과 저장소 권한을 동시에 요청
-                          await [
-                            Permission.audio,
-                            Permission.storage,
-                          ].request();
-                        } catch (e) {
-                          debugPrint("Permission request error: $e");
-                        }
+                        // 권한 요청 결과를 Map으로 받아서 처리 (return 생략 방지)
+                        Map<Permission, PermissionStatus> statuses = await [
+                          Permission.audio,
+                          Permission.storage,
+                          // 안드로이드 13 이상을 위해 아래 권한 추가를 권장합니다.
+                          // Permission.nearbyWifiDevices,
+                        ].request();
+
+                        debugPrint("Permissions: $statuses");
                       }
 
-                      // 🚀 2. 첫 실행 완료 플래그 저장
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('isFirstRun', false);
 
-                      // 🚀 3. 메인 화면으로 이동
                       if (!mounted) return;
                       Navigator.pushReplacementNamed(context, '/main');
                     } else {
-                      // 다음 온보딩 페이지로 이동
                       _controller.nextPage(
                         duration: const Duration(milliseconds: 800),
                         curve: Curves.easeOutQuart,
@@ -269,7 +265,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildGlassActionButton(String label, VoidCallback onTap) {
+  Widget _buildGlassActionButton(String label, Function() onTap) {
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(

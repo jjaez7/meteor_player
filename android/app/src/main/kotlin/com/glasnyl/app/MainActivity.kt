@@ -86,11 +86,41 @@ class MainActivity: AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "sendMediaKey" -> {
-                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     val keyCode = call.argument<Int>("keyCode") ?: 0
-                    audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-                    audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-                    result.success(true)
+                    val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+                    val componentName = ComponentName(this, "com.notification_listener_service.NotificationListenerServiceImpl")
+                    
+                    // 🚀 [수정] 버튼 누를 때마다 현재 "진짜로 재생 중인" 세션을 새로 찾습니다.
+                    val controllers = mediaSessionManager.getActiveSessions(componentName)
+                    
+                    if (controllers.isNotEmpty()) {
+                        val controller = controllers.find { it.playbackState?.state == PlaybackState.STATE_PLAYING } ?: controllers[0]
+                        
+                        // 🚀 [핵심] 오디오 매니저가 아니라 컨트롤러에게 직접 명령을 내립니다.
+                        when (keyCode) {
+                            87 -> controller.transportControls.skipToNext()      // 다음 곡
+                            88 -> controller.transportControls.skipToPrevious()  // 이전 곡
+                            85 -> { // 재생/일시정지 토글
+                                if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                                    controller.transportControls.pause()
+                                } else {
+                                    controller.transportControls.play()
+                                }
+                            }
+                            else -> {
+                                // 기타 키는 기존 방식 유지
+                                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+                                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+                            }
+                        }
+                        
+                        // 🚀 명령 전송 후 정보를 즉시 갱신하도록 유도
+                        handler.postDelayed({ pushStatusUpdate() }, 300)
+                        result.success(true)
+                    } else {
+                        result.error("NO_SESSION", "Active session not found", null)
+                    }
                 }
                 "getCurrentStatus" -> {
                     val status = getMediaStatus()
@@ -229,8 +259,12 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
             val controllers = mediaSessionManager.getActiveSessions(componentName)
 
             if (controllers.isNotEmpty()) {
-                val controller = controllers[0]
+                // 🚀 [핵심 수정] 현재 실제로 재생 중인(Playing) 세션을 우선적으로 찾습니다.
+                // 만약 재생 중인 게 없다면 리스트의 첫 번째 세션을 가져옵니다.
+                val controller = controllers.find { it.playbackState?.state == PlaybackState.STATE_PLAYING } 
+                                 ?: controllers[0]
                 
+                // 세션 토큰이 바뀌었을 경우에만 콜백을 새로 등록합니다.
                 if (activeController?.sessionToken != controller.sessionToken) {
                     activeController?.unregisterCallback(mediaCallback)
                     activeController = controller
@@ -239,6 +273,8 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
 
                 val playbackState = controller.playbackState
                 val metadata = controller.metadata
+                
+                // 앨범 아트 추출 로직
                 val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) 
                           ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 
@@ -249,6 +285,7 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                     stream.toByteArray()
                 }
 
+                // Flutter로 보낼 데이터 맵 구성
                 mutableMapOf<String, Any>(
                     "position" to (playbackState?.position ?: 0L),
                     "duration" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
@@ -258,16 +295,19 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                     "albumArt" to (albumArtBytes ?: ByteArray(0))
                 )
             } else {
+                // 활성화된 세션이 없을 때 기본값
                 mutableMapOf<String, Any>(
                     "position" to 0L,
                     "duration" to 0L,
-                    "isPlaying" to false, // 엔진을 멈추게 함
+                    "isPlaying" to false,
                     "title" to "Ready to Play",
                     "artist" to "GLASNYL",
                     "albumArt" to ByteArray(0)
                 )
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) { 
+            null 
+        }
     }
 
     private fun startPolling() {

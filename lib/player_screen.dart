@@ -23,6 +23,11 @@ import 'features/screen_lock.dart';
 import 'services/lyrics_service.dart';
 import 'dart:async';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'services/ad_service.dart';
+import 'menu/dialog_pass.dart';
+
+Timer? _accessCheckTimer;
+bool _isPassDialogShowing = false;
 
 class VinylPlayerScreen extends StatefulWidget {
   const VinylPlayerScreen({super.key});
@@ -125,6 +130,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   @override
   void initState() {
+    _startAccessGuardian();
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
@@ -246,6 +252,37 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     /*_setLowRefreshRate();*/
   }
 
+  void _startAccessGuardian() {
+    // 기존 타이머가 있다면 취소하여 중복 실행 방지
+    _accessCheckTimer?.cancel();
+
+    _accessCheckTimer = Timer.periodic(const Duration(seconds: 2), (
+      timer,
+    ) async {
+      // 1. 이미 다이얼로그가 떠 있거나, 편집 모드, 혹은 PiP 모드일 때는 체크 건너뜀
+      if (_isPassDialogShowing || isEditMode || _isPipMode) return;
+
+      // 2. 권한 체크 (initInstallTime은 main에서 한 번만 호출되므로 여기선 생략)
+      bool hasAccess = await AdService.isFullAccess();
+
+      // 3. 권한이 만료되었을 때만 팝업 실행
+      if (!hasAccess && mounted) {
+        _isPassDialogShowing = true;
+
+        // 광고 팝업 실행
+        showPassDialog(context, () {
+          if (mounted) {
+            setState(() {
+              _isPassDialogShowing = false;
+            });
+            // 권한 획득 후 즉시 상태 갱신 (선택사항)
+            _fetchInitialStatus();
+          }
+        });
+      }
+    });
+  }
+
   void _handleInternalToggle() {
     PlayerLogic.togglePlay(
       isPlaying: _isPlaying,
@@ -357,6 +394,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   @override
   void dispose() {
+    _accessCheckTimer?.cancel();
     // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
@@ -586,26 +624,26 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         // 🚀 [개선 1] 재귀 호출 대신 가벼운 텍스트 먼저 렌더링
         // 앨범 아트가 없어도 제목/가수 정보는 먼저 띄워야 검은 화면을 탈출합니다.
         setState(() {
-        _currentTitle = data['title'] ?? "Ready to Play";
-        _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
-        _isPlaying = data['isPlaying'] ?? false;
+          _currentTitle = data['title'] ?? "Ready to Play";
+          _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
+          _isPlaying = data['isPlaying'] ?? false;
 
-        // 🚀 [수정] 전체 길이 동기화 로직 강화
-        if (data['duration'] != null) {
-          final int durMs = (data['duration'] as num).toInt();
-          
-          if (durMs > 0) {
-            _totalDuration = Duration(milliseconds: durMs);
-            debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
-          } else {
-            // ⚠️ 길이가 0이라면 시스템이 아직 정보를 준비 못한 것임
-            debugPrint("⚠️ 전체 길이 정보가 0입니다. 1초 후 재시도합니다.");
-            Future.delayed(const Duration(seconds: 1), () {
-              if (mounted) _fetchInitialStatus(); // 1초 뒤 한 번 더 데이터 요청
-            });
+          // 🚀 [수정] 전체 길이 동기화 로직 강화
+          if (data['duration'] != null) {
+            final int durMs = (data['duration'] as num).toInt();
+
+            if (durMs > 0) {
+              _totalDuration = Duration(milliseconds: durMs);
+              debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
+            } else {
+              // ⚠️ 길이가 0이라면 시스템이 아직 정보를 준비 못한 것임
+              debugPrint("⚠️ 전체 길이 정보가 0입니다. 1초 후 재시도합니다.");
+              Future.delayed(const Duration(seconds: 1), () {
+                if (mounted) _fetchInitialStatus(); // 1초 뒤 한 번 더 데이터 요청
+              });
+            }
           }
-        }
-      });
+        });
 
         // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
         if (_isPlaying) {
@@ -705,7 +743,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
           extendBody: true,
           extendBodyBehindAppBar: true,
-          
+
           body: AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             curve: Curves.easeInOut,
@@ -1066,6 +1104,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     child: RepaintBoundary(
                       child: SafeArea(
                         child: PlayerAppBar(
+                          onPassUpdated: () => setState(() {}),
                           isPip: _isPipMode,
                           orientation: orientation,
                           textColor: _textColor,
@@ -1107,7 +1146,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
   // 2. 프로그레스 바 스트림 빌더
-Widget _buildProgressBarStream(double barWidth) {
+  Widget _buildProgressBarStream(double barWidth) {
     return SizedBox(
       key: _progressKey,
       width: barWidth,
@@ -1129,7 +1168,7 @@ Widget _buildProgressBarStream(double barWidth) {
             setState(() {
               _positionNotifier.value = targetPosition;
             });
-            
+
             debugPrint("🎯 가사 수동 이동 및 화면 갱신: $targetPosition");
           }
         },
