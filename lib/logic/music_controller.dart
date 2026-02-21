@@ -70,9 +70,9 @@ static bool isMusicApp(String packageName) {
     'player',
     'audio',
     'sound',
-    'media',
+    // 'media'  제거: com.android.mediastorage 등 시스템 패키지 오탐
+    // 'stream' 제거: com.samsung.android.provider.streaming 등 오탐
     'radio',
-    'stream',
     'vinyl',
     'mp3',
     'melon',
@@ -86,7 +86,10 @@ static bool isMusicApp(String packageName) {
     'android.system',
     'com.android.settings',
     'com.android.systemui',
-    'com.google.android.googlequicksearchbox', // 구글 검색/어시스턴트
+    'com.google.android.googlequicksearchbox',
+    'com.samsung.android.provider',  // 삼성 시스템 프로바이더
+    'com.lge.android',               // LG 시스템
+    'com.huawei.android',            // 화웨이 시스템
   ];
 
   if (exclusionList.any((excluded) => p.contains(excluded))) return false;

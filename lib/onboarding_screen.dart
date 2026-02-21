@@ -21,6 +21,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final Color glassBaseColor = Colors.white.withValues(alpha: 0.1);
 
   @override
+  void dispose() {
+    _controller.dispose(); // PageController 메모리 해제
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final bool isLandscape = size.width > size.height;
@@ -166,10 +172,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     required bool isLandscape,
   }) {
     return Center(
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 600),
-        opacity: _currentPage == index ? 1.0 : 0.0,
-        child: ClipRRect(
+      child: ClipRRect(
           borderRadius: BorderRadius.circular(40),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
@@ -211,7 +214,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
         ),
-      ),
     );
   }
 
@@ -314,13 +316,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildBlurOrb(double size, Color color) {
+    // BackdropFilter 제거: 단색 배경을 블러해도 시각 효과 없음, 연산만 낭비
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-        child: Container(color: Colors.transparent),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: color, blurRadius: 60, spreadRadius: 20),
+        ],
       ),
     );
   }

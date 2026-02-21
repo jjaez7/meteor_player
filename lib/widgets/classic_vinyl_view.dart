@@ -48,7 +48,7 @@ class ClassicVinylView extends StatelessWidget {
   Widget build(BuildContext context) {
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 300),
       switchInCurve: Curves.easeOutBack,
       switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, animation) => FadeTransition(
@@ -176,139 +176,143 @@ final bool isPlaying;
 class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> 
     with SingleTickerProviderStateMixin {
   late FixedExtentScrollController _scrollController;
+  late Ticker _ticker;
+  
   int _lastIndex = -1;
   bool _isUserInteracting = false;
   Timer? _debounceTimer;
 
-  late Ticker _ticker;
-  Duration _internalOffset = Duration.zero;
+  // 🚀 핵심: 마지막으로 성공적으로 업데이트된 인덱스를 저장하여 역행을 물리적으로 차단
+  int _maxIndexReached = -1;
+
+  // 고정밀 동기화 변수
+  Duration _basePosition = Duration.zero; 
+  Duration _elapsedSinceSync = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _lastIndex = _calculateCurrentIndex();
+    _basePosition = widget.currentPosition;
+    _lastIndex = _calculateCurrentIndex(_basePosition);
+    _maxIndexReached = _lastIndex;
     _scrollController = FixedExtentScrollController(
       initialItem: _lastIndex >= 0 ? _lastIndex : 0,
     );
 
     _ticker = createTicker((elapsed) {
-      if (mounted) {
-        setState(() {
-          _internalOffset = elapsed; 
-        });
-        // 🚀 Ticker에서 매 프레임 감시하므로 '뒷북' 스크롤이 사라집니다.
-        _checkAndScroll();
-      }
-    });
+if (!mounted || !widget.isPlaying || _isUserInteracting) return;
+_elapsedSinceSync = elapsed; // setState 없이 직접 대입
+_checkAndScroll();
+});
     
     if (widget.isPlaying) _ticker.start();
+  }
+
+  // 다음 가사까지 남은 시간을 계산하여 적응형 duration을 결정
+  Duration _getAdaptiveDuration(int currentIndex, Duration currentPos) {
+    if (currentIndex + 1 >= widget.lyrics.length) {
+      return const Duration(milliseconds: 200);
+    }
+    final nextItem = widget.lyrics[currentIndex + 1];
+    if (nextItem is! LyricLine) return const Duration(milliseconds: 200);
+
+    // 다음 가사까지 남은 시간의 70%를 애니메이션에 사용 (최소 80ms, 최대 250ms)
+    final gap = (nextItem.time - currentPos).inMilliseconds;
+    final adaptiveMs = (gap * 0.7).clamp(80.0, 250.0).toInt();
+    return Duration(milliseconds: adaptiveMs);
   }
 
   void _checkAndScroll() {
     if (_isUserInteracting || !_scrollController.hasClients) return;
 
-    int currentIndex = _calculateCurrentIndex();
-    if (currentIndex != _lastIndex && currentIndex >= 0) {
-      _lastIndex = currentIndex;
-      
-      // 🚀 반응 속도 최적화: 400ms, easeOutCubic
-      _scrollController.animateToItem(
-        currentIndex,
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOutQuart,
-      );
-    }
-  }
-
-  // _LyricsAutoScrollerState 클래스 내부
-void _forceResetInteraction() {
-  _debounceTimer?.cancel(); // 3초 타이머 취소
-  if (_isUserInteracting) {
-    setState(() {
-      _isUserInteracting = false; // 즉시 자동 스크롤 모드로 복귀
-    });
-  }
-}
-
-// classic_vinyl_view.dart 내부 _LyricsAutoScrollerState 클래스 수정
-
-// classic_vinyl_view.dart 내의 _LyricsAutoScrollerState 클래스 수정
-// classic_vinyl_view.dart 내 _LyricsAutoScrollerState 클래스 수정
-
-@override
-void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
-  super.didUpdateWidget(oldWidget);
-  
-  // 1. 재생 상태 변경 처리 (기존 유지)
-  if (widget.isPlaying != oldWidget.isPlaying) {
-    if (widget.isPlaying) {
-      if (!_ticker.isTicking) _ticker.start();
-    } else {
-      _ticker.stop();
-    }
-  }
-
-  // 🚀 2. 핵심: 외부/내부 어디서든 시간이 바뀌었을 때 감지
-  if (widget.currentPosition != oldWidget.currentPosition) {
+    // 🚀 선행 보정: 소리보다 400ms 먼저 가사를 준비 (체감 성능 향상)
+    final precisePos = _basePosition + _elapsedSinceSync + const Duration(milliseconds: 500);
+    int currentIndex = _calculateCurrentIndex(precisePos);
     
-    // [판단 기준] 
-    // - 시간이 거꾸로 갔을 때 (이전 곡/처음으로)
-    // - 시간 차이가 1.5초 이상 크게 났을 때 (시스템 진행바 조작)
-    // - 현재 시간이 거의 0초일 때
-    bool isExternalSeek = 
-        widget.currentPosition < oldWidget.currentPosition || 
-        (widget.currentPosition - oldWidget.currentPosition).abs().inMilliseconds > 1500 ||
-        widget.currentPosition.inMilliseconds < 200;
+    if (currentIndex != -1 && currentIndex != _lastIndex) {
+      if (currentIndex > _maxIndexReached) {
+        // 🚀 [핵심 수정] maxIndex 업데이트 전에 건너뛴 수 계산
+        final skipped = currentIndex - _lastIndex;
+        _maxIndexReached = currentIndex;
+        _lastIndex = currentIndex;
 
-    if (isExternalSeek) {
-      // 💡 여기서 핵심! 외부에서 조작해도 3초 대기를 풀어야 합니다.
-      _debounceTimer?.cancel();
-      
-      // setState를 직접 부르지 않아도 didUpdateWidget은 이미 리빌드 중이므로 
-      // 변수 값만 즉시 바꿔주면 됩니다.
-      _isUserInteracting = false; 
+        if (skipped >= 3) {
+          // 가사를 3개 이상 건너뜀 → 즉시 이동 (애니메이션 없음)
+          _scrollController.jumpToItem(currentIndex);
+        } else {
+          // 다음 가사까지 남은 시간에 맞춘 적응형 duration
+          final duration = _getAdaptiveDuration(currentIndex, precisePos);
+          _scrollController.animateToItem(
+            currentIndex,
+            duration: duration,
+            curve: Curves.easeOutCubic,
+          );
+        }
+      }
+    }
+  }
 
-      // Ticker 보정값 리셋
-      if (_ticker.isTicking) {
+  @override
+  void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // 1. 재생 상태 변경
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        _basePosition = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        if (!_ticker.isTicking) _ticker.start();
+      } else {
         _ticker.stop();
-        _ticker.start();
       }
-      _internalOffset = Duration.zero;
-      
-      int newIndex = _calculateCurrentIndex();
-      _lastIndex = newIndex;
+    }
 
-      // 즉시 스크롤 이동
-      if (_scrollController.hasClients) {
-        _scrollController.jumpToItem(newIndex >= 0 ? newIndex : 0);
+    // 2. 🚀 시스템 신호와의 정밀 동기화 (Drift Detection)
+    if (widget.currentPosition != oldWidget.currentPosition) {
+      final estimatedNow = _basePosition + _elapsedSinceSync;
+      final drift = (widget.currentPosition - estimatedNow).abs();
+
+      // [판단] 사용자가 진행바를 옮겼거나(Seek), 곡이 바뀌었을 때만 강제 재동기화
+      // 1.2초 미만의 미세한 오차는 시스템 신호가 '느린 것'이므로 무시하여 튀는 현상 방지
+      bool isSeek = (widget.currentPosition - oldWidget.currentPosition).abs().inMilliseconds > 1200 ||
+                    widget.currentPosition < oldWidget.currentPosition;
+
+      if (isSeek || drift > const Duration(milliseconds: 1500)) {
+        _basePosition = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        
+        if (_ticker.isTicking) {
+          _ticker.stop();
+          _ticker.start();
+        }
+        
+        int newIndex = _calculateCurrentIndex(widget.currentPosition);
+        _lastIndex = newIndex;
+        _maxIndexReached = newIndex; // 최대 도달 지점 리셋 (Seek 대응)
+
+        if (_scrollController.hasClients) {
+          _scrollController.jumpToItem(newIndex >= 0 ? newIndex : 0);
+        }
       }
-      
-      debugPrint("📢 외부/내부 시스템 조작 감지: 가사 동기화 및 고정 해제");
+    }
+
+    // 3. 새 노래 시작 시
+    if (widget.lyrics != oldWidget.lyrics) {
+      _basePosition = widget.currentPosition;
+      _elapsedSinceSync = Duration.zero;
+      _lastIndex = -1;
+      _maxIndexReached = -1;
+      if (_scrollController.hasClients) _scrollController.jumpToItem(0);
     }
   }
 
-  // 3. 곡 변경 시 처리 (기존 유지)
-  if (widget.lyrics != oldWidget.lyrics) {
-    _lastIndex = -1;
-    _internalOffset = Duration.zero;
-    if (_scrollController.hasClients) _scrollController.jumpToItem(0);
-  }
-}
-
-  int _calculateCurrentIndex() {
+  int _calculateCurrentIndex(Duration pos) {
     if (widget.lyrics.isEmpty) return -1;
-
-    // 🚀 보정값을 150ms -> 300ms로 높여서 '미리' 준비하게 합니다.
-    // 음악 재생 라이브러리의 딜레이에 따라 이 값을 200~400 사이로 조절해 보세요.
-    final int currentMs = widget.currentPosition.inMilliseconds + 
-                          _internalOffset.inMilliseconds + 400; 
-    
     int foundIndex = 0;
     for (int i = 0; i < widget.lyrics.length; i++) {
       final item = widget.lyrics[i];
       if (item is! LyricLine) continue;
-
-      if (item.time.inMilliseconds <= currentMs) {
+      if (item.time <= pos) {
         foundIndex = i;
       } else {
         break; 
@@ -319,7 +323,7 @@ void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
 
   void _onUserInteraction() {
     if (_isUserInteracting) {
-      _debounceTimer?.cancel(); // 이미 조작 중이면 타이머만 리셋
+      _debounceTimer?.cancel();
     } else {
       setState(() => _isUserInteracting = true);
     }
@@ -327,12 +331,14 @@ void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
     _debounceTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() => _isUserInteracting = false);
-        _lastIndex = -1; // 복귀 시 즉시 다시 그리도록 초기화
+        // 조작 종료 후 현재 시점으로 리싱크
+        _basePosition = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        _maxIndexReached = _calculateCurrentIndex(_basePosition);
         _checkAndScroll();
       }
     });
   }
-
 
   @override
   void dispose() {
@@ -342,16 +348,6 @@ void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
     super.dispose();
   }
 
-  void _scrollToCurrentIndex() {
-    int currentIndex = _calculateCurrentIndex();
-    if (currentIndex >= 0 && _scrollController.hasClients && !_isUserInteracting) {
-      _scrollController.animateToItem(
-        currentIndex,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeInOutCubic,
-      );
-    }
-  }
 
   // 상태 메시지 헬퍼 (기존 유지)
   String _getStatusMessage(LyricStatus status) {
@@ -386,7 +382,7 @@ void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
 
 @override
 Widget build(BuildContext context) {
-  int currentIndex = _calculateCurrentIndex();
+  int currentIndex = _lastIndex;
   final double responsiveRadius = widget.size * 0.12;
 
   return GestureDetector(

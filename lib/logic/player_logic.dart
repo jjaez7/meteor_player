@@ -5,6 +5,9 @@ import '../utils/layout_engine.dart';
 import '../main.dart'; // audioHandler 접근을 위해 필요
 
 class PlayerLogic {
+  // main.dart의 _mediaChannel과 동일한 채널 — 한 곳에서만 문자열 관리
+  static const _mediaChannel = MethodChannel('com.glasnyl.app/media_control');
+
   // --- [1] 테마 및 색상 관련 로직 ---
 
   /// 공장 초기화 로직 (절대 리셋)
@@ -41,16 +44,17 @@ class PlayerLogic {
   // --- [3] 음악 제어 로직 ---
 
   /// 재생/일시정지 토글
-  static void togglePlay({
+  /// await로 실제 오디오 상태 변경 후 UI 콜백 호출
+  static Future<void> togglePlay({
     required bool isPlaying,
     required VoidCallback onToggle,
-  }) {
+  }) async {
     if (isPlaying) {
-      audioHandler.pause();
+      await audioHandler.pause();
     } else {
-      audioHandler.play();
+      await audioHandler.play();
     }
-    onToggle(); // UI 상태 업데이트를 위한 콜백 호출
+    onToggle();
   }
 
   /// 다음 곡 재생
@@ -67,9 +71,9 @@ class PlayerLogic {
   /// relativePos: 0.0 ~ 1.0 사이의 비율
   static Future<void> seekTo(double relativePos) async {
     try {
-      const platform = MethodChannel('com.glasnyl.app/media_control');
-      // 비율(0.0~1.0)을 네이티브로 직접 쏩니다.
-      await platform.invokeMethod('seek', {'position': relativePos.clamp(0.0, 1.0)});
+      await _mediaChannel.invokeMethod('seek', {
+        'position': relativePos.clamp(0.0, 1.0),
+      });
     } catch (e) {
       debugPrint("❌ Seek 오류: $e");
     }

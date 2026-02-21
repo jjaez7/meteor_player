@@ -55,51 +55,60 @@ class PermissionGuardState extends State<PermissionGuard>
     });
   }
 
-  // 🚀 프레임 드랍 감지 로직
+  // 🚀 프레임 감지: addPostFrameCallback 재귀 대신 SchedulerBinding.instance.scheduleFrameCallback 사용
+  // 부팅 알림이 완료되면 렉 감지만 저주기로 전환하여 불필요한 60fps 루프를 방지합니다.
   void _startLagDetection() {
-    // 앱 시작 후 5초 동안은 시스템 초기화로 인해 프레임이 튈 수 있으므로 대기
     Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        SchedulerBinding.instance.addPostFrameCallback(_onFrame);
-      }
+      if (mounted) _scheduleNextFrame(Duration.zero);
     });
   }
 
-  void _onFrame(Duration timestamp) {
-    if (!mounted) return;
+  void _scheduleNextFrame(Duration lastTimestamp) {
+    SchedulerBinding.instance.addPostFrameCallback((timestamp) {
+      if (!mounted) return;
 
-    SchedulerBinding.instance.addPostFrameCallback((Duration nextTimestamp) {
-      final double frameTime =
-          (nextTimestamp.inMicroseconds - timestamp.inMicroseconds) / 1000;
+      final double frameMs = lastTimestamp == Duration.zero
+          ? 0
+          : (timestamp.inMicroseconds - lastTimestamp.inMicroseconds) / 1000;
 
-      // 1. 부팅 알림 로직 (안정화 확인)
+      // 1. 부팅 알림: 안정 프레임 10개 연속 확인
       if (!_hasShowBootAlarm && _isPermissionGranted) {
-        if (frameTime < 33.0) {
-          // 약 30fps 이상의 안정적인 상태
+        if (frameMs > 0 && frameMs < 33.0) {
           _stableFrameCount++;
         } else {
-          _stableFrameCount = 0; // 프레임이 튀면 다시 카운트
+          _stableFrameCount = 0;
         }
-
-        // 연속으로 10프레임 이상 안정적이면 "진짜 준비됨"으로 판단
         if (_stableFrameCount > 10) {
           _hasShowBootAlarm = true;
-          showTopStatusAlarm(); // 부팅 알림 호출
+          showTopStatusAlarm();
         }
       }
 
-      // 2. 기존 렉 감지 로직
-      if (widget.isPlaying && frameTime > _lagThresholdMs) {
+      // 2. 렉 감지 (재생 중일 때만)
+      if (widget.isPlaying && frameMs > _lagThresholdMs) {
         final now = DateTime.now();
         if (_lastLagTime == null ||
             now.difference(_lastLagTime!) > const Duration(seconds: 10)) {
           _lastLagTime = now;
-          showTopStatusAlarm(isLag: true, ms: frameTime.toInt());
+          showTopStatusAlarm(isLag: true, ms: frameMs.toInt());
         }
       }
 
-      if (mounted) _onFrame(nextTimestamp);
+      // 3. 부팅 알림이 끝났고 재생 중이 아니면 → 루프 중단
+      //    재생이 다시 시작되면 isPlaying 변경 시 외부에서 다시 트리거
+      if (_hasShowBootAlarm && !widget.isPlaying) return;
+
+      _scheduleNextFrame(timestamp);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant PermissionGuard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 재생이 다시 시작됐을 때 중단된 렉 감지 루프를 재개
+    if (!oldWidget.isPlaying && widget.isPlaying && _hasShowBootAlarm) {
+      _scheduleNextFrame(Duration.zero);
+    }
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -6,8 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:glasnyl/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
-import 'services/lyrics_service.dart';
-import 'models/lyric_model.dart';
 import 'services/ad_service.dart';
 
 String appVersion="1.0.0";
@@ -61,10 +60,8 @@ void main() async {
 
   runApp(GlasnylPlayer(isFirstRun: isFirstRun));
 
-    // 🚀 [수정 핵심] 광고 초기화를 비동기로 처리 (await 제거)
-  // 이렇게 해야 광고 로딩 때문에 음악 정보(네이티브 채널) 연결이 끊기지 않습니다.
-  AdService.initAdmobWithDelay();
-  
+  // 광고 초기화: runApp 이후 비동기 실행 (음악 채널 연결 차단 방지)
+  unawaited(AdService.initAdmobWithDelay());
 }
 
 
@@ -76,7 +73,6 @@ class MyAudioHandler extends BaseAudioHandler {
     'com.glasnyl.app/media_status',
   );
 
-  List<LyricLine> currentLyrics = [];
   Stream<Duration> get position => playbackState.map((state) => state.updatePosition).distinct();
   
   // (옵션) 전체 길이 스트림도 있으면 편합니다.
@@ -139,7 +135,6 @@ class MyAudioHandler extends BaseAudioHandler {
               duration: Duration(milliseconds: durationMs),
             ),
           );
-          _updateLyrics(newTitle, newArtist);
         }
       } catch (e) {
         debugPrint("🚨 리스너 에러 방어: $e"); // 에러가 나도 리스너는 죽지 않음
@@ -155,19 +150,6 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
-  Future<void> _updateLyrics(String title, String artist) async {
-    try {
-      final result = await LyricsService.getLyrics(title, artist);
-      currentLyrics = result.lyrics;
-      
-      // UI에 가사가 업데이트되었음을 알리기 위해 
-      // 필요하다면 가사 전용 Stream을 만들거나 mediaItem을 다시 한번 쏴줄 수 있습니다.
-      debugPrint("✅ Lyrics loaded: ${currentLyrics.length} lines (Status: ${result.status.name})");
-    } catch (e) {
-      debugPrint("🚨 Lyrics Update Error: $e");
-      currentLyrics = [];
-    }
-  }
 
   Future<void> refreshMetadata() async {
     try {
@@ -211,30 +193,31 @@ class GlasnylPlayer extends StatelessWidget {
       ),
       home: isFirstRun
           ? const OnboardingScreen()
-          : StreamBuilder<PlaybackState>(
-              stream: audioHandler.playbackState,
-              builder: (context, snapshot) {
-                final isPlaying = snapshot.data?.playing ?? false;
-                return PermissionGuard(
-                  key: permissionGuardKey,
-                  isPlaying: isPlaying,
-                  child: const VinylPlayerScreen(),
-                );
-              },
-            ),
+          : const _MainRoute(),
       routes: {
-        // 🚀 routes 부분도 StreamBuilder를 추가하여 일관성을 맞췄습니다.
-        '/main': (context) => StreamBuilder<PlaybackState>(
-          stream: audioHandler.playbackState,
-          builder: (context, snapshot) {
-            final isPlaying = snapshot.data?.playing ?? false;
-            return PermissionGuard(
-              key: permissionGuardKey,
-              isPlaying: isPlaying,
-              child: const VinylPlayerScreen(),
-            );
-          },
-        ),
+        '/main': (context) => const _MainRoute(),
+      },
+    );
+  }
+}
+
+/// home과 /main route가 같은 permissionGuardKey를 공유하면
+/// 동시에 트리에 존재하는 순간 GlobalKey 충돌이 발생합니다.
+/// _MainRoute로 분리하여 단일 진입점을 보장합니다.
+class _MainRoute extends StatelessWidget {
+  const _MainRoute();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<PlaybackState>(
+      stream: audioHandler.playbackState,
+      builder: (context, snapshot) {
+        final isPlaying = snapshot.data?.playing ?? false;
+        return PermissionGuard(
+          key: permissionGuardKey,
+          isPlaying: isPlaying,
+          child: const VinylPlayerScreen(),
+        );
       },
     );
   }
