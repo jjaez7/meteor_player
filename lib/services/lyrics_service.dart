@@ -115,6 +115,7 @@ class LyricsService {
     return LyricResult([], LyricStatus.noLyrics);
   }
 
+<<<<<<< HEAD
   // ─────────────────────────────────────────────
   // 🌐 PRIVATE: API 호출
   // ─────────────────────────────────────────────
@@ -137,6 +138,19 @@ class LyricsService {
 
     try {
       debugPrint("🌐 [Fuzzy] $url");
+=======
+  /// 🌐 실제 API 호출 로직
+  /// 🌐 실제 API 호출 로직 수정
+  static Future<LyricResult> _executeFetch(String title, String artist) async {
+    final cleanArtist = (artist == "Unknown" || artist == "알 수 없는 아티스트" || artist == "") ? "" : artist;
+    final url = Uri.parse(
+      'https://lrclib.net/api/get?artist_name=${Uri.encodeComponent(cleanArtist)}&track_name=${Uri.encodeComponent(title)}'
+    );
+
+    try {
+      debugPrint("🌐 [API 호출] $url");
+      // 🚀 타임아웃을 7초에서 12초 정도로 늘려줍니다.
+>>>>>>> ee3cf5301f7823a5386c09c5f8c42c31b6ca5536
       final response = await http.get(url).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
@@ -153,6 +167,7 @@ class LyricsService {
             }
           }
         }
+<<<<<<< HEAD
         for (final item in items) {
           final plain = item['plainLyrics'] as String?;
           if (plain != null && plain.isNotEmpty) {
@@ -167,6 +182,14 @@ class LyricsService {
       return LyricResult([], LyricStatus.noLyrics);
     } on TimeoutException {
       debugPrint("🚨 [Fuzzy 타임아웃]");
+=======
+      } 
+      // 404 등 가사가 없는 경우
+      return LyricResult([], LyricStatus.noLyrics);
+    } on TimeoutException catch (_) {
+      // 🚀 타임아웃 에러를 명확히 구분해서 던집니다.
+      debugPrint("🚨 [타임아웃] 서버 응답 지연");
+>>>>>>> ee3cf5301f7823a5386c09c5f8c42c31b6ca5536
       return LyricResult([], LyricStatus.timeout);
     } catch (e) {
       debugPrint("🚨 [Fuzzy 에러] $e");

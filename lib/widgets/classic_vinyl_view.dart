@@ -200,10 +200,20 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
     );
 
     _ticker = createTicker((elapsed) {
+<<<<<<< HEAD
 if (!mounted || !widget.isPlaying || _isUserInteracting) return;
 _elapsedSinceSync = elapsed; // setState 없이 직접 대입
 _checkAndScroll();
 });
+=======
+      if (!mounted || !widget.isPlaying || _isUserInteracting) return;
+
+      setState(() {
+        _elapsedSinceSync = elapsed; 
+      });
+      _checkAndScroll();
+    });
+>>>>>>> ee3cf5301f7823a5386c09c5f8c42c31b6ca5536
     
     if (widget.isPlaying) _ticker.start();
   }
@@ -225,6 +235,7 @@ _checkAndScroll();
   void _checkAndScroll() {
     if (_isUserInteracting || !_scrollController.hasClients) return;
 
+<<<<<<< HEAD
     // 🚀 선행 보정: 소리보다 400ms 먼저 가사를 준비 (체감 성능 향상)
     final precisePos = _basePosition + _elapsedSinceSync + const Duration(milliseconds: 500);
     int currentIndex = _calculateCurrentIndex(precisePos);
@@ -252,6 +263,29 @@ _checkAndScroll();
     }
   }
 
+=======
+    // 🚀 선행 보정: 소리보다 300ms 먼저 가사를 준비 (체감 성능 향상)
+    final precisePos = _basePosition + _elapsedSinceSync + const Duration(milliseconds: 300);
+    int currentIndex = _calculateCurrentIndex(precisePos);
+    
+    if (currentIndex != -1 && currentIndex != _lastIndex) {
+      // 🚀 [해결책] 위로 튀기 방지 로직
+      // 현재 계산된 인덱스가 지금까지 도달한 최대 인덱스보다 클 때만 전진합니다.
+      // 이렇게 하면 시스템의 느린 신호 때문에 시간이 '뒤로' 가도 스크롤은 버팁니다.
+      if (currentIndex > _maxIndexReached) {
+        _maxIndexReached = currentIndex;
+        _lastIndex = currentIndex;
+        
+        _scrollController.animateToItem(
+          currentIndex,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutQuart,
+        );
+      }
+    }
+  }
+
+>>>>>>> ee3cf5301f7823a5386c09c5f8c42c31b6ca5536
   @override
   void didUpdateWidget(covariant _LyricsAutoScroller oldWidget) {
     super.didUpdateWidget(oldWidget);
