@@ -150,6 +150,91 @@ class ClassicVinylView extends StatelessWidget {
   }
 }
 
+// 🚀 개별 가사 아이템 — 별도 StatefulWidget으로 분리
+// 전체 리스트 rebuild 없이 이전/현재 아이템 2개만 애니메이션
+class _LyricItem extends StatefulWidget {
+  final String text;
+  final bool isCurrent;
+  final double baseSize;
+  final double currentSize;
+
+  const _LyricItem({
+    required this.text,
+    required this.isCurrent,
+    required this.baseSize,
+    required this.currentSize,
+  });
+
+  @override
+  State<_LyricItem> createState() => _LyricItemState();
+}
+
+class _LyricItemState extends State<_LyricItem>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      value: widget.isCurrent ? 1.0 : 0.0,
+    );
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LyricItem old) {
+    super.didUpdateWidget(old);
+    if (widget.isCurrent && !old.isCurrent) {
+      _ctrl.forward(from: 0.0);
+    } else if (!widget.isCurrent && old.isCurrent) {
+      _ctrl.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // child를 builder 밖에 두면 애니메이션 프레임마다 Text가 재생성되지 않음
+    return AnimatedBuilder(
+      animation: _anim,
+      child: Text(
+        widget.text,
+        textAlign: TextAlign.center,
+        softWrap: true,
+        maxLines: 4,
+        overflow: TextOverflow.ellipsis,
+      ),
+      builder: (context, child) {
+        final t = _anim.value;
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: DefaultTextStyle(
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: lerpDouble(0.25, 1.0, t)!),
+                fontSize: lerpDouble(widget.baseSize, widget.currentSize, t)!,
+                fontWeight: t > 0.5 ? FontWeight.bold : FontWeight.normal,
+                height: 1.3,
+                letterSpacing: -0.5,
+              ),
+              child: child!,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 // 🚀 내부에서만 사용하는 가사 스크롤 전용 위젯 (성능 최적화용)
 class _LyricsAutoScroller extends StatefulWidget {
   final List<dynamic> lyrics;
@@ -175,7 +260,7 @@ final bool isPlaying;
 
 class _LyricsAutoScrollerState extends State<_LyricsAutoScroller> 
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  late FixedExtentScrollController _scrollController;
+  late ScrollController _scrollController;
   late Ticker _ticker;
   
   int _lastIndex = -1;
@@ -193,15 +278,31 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
   Duration _lastTickerCheck = Duration.zero;
   static const Duration _throttleInterval = Duration(milliseconds: 25);
 
+  // 아이템 크기 — initState에서 한 번만 계산
+  late final double _baseSize;
+  late final double _currentSize;
+  late final double _itemExtent;
+
+  // padding = size/2 - itemExtent/2 이므로 index * itemExtent 가 정중앙 오프셋
+  double _offsetForIndex(int index) => index * _itemExtent;
+
   @override
   void initState() {
     super.initState();
+
+    _baseSize    = (widget.size * 0.05).clamp(16.0, 20.0);
+    _currentSize = (widget.size * 0.065).clamp(20.0, 28.0);
+    _itemExtent  = _currentSize * 3.0;
+
     _basePosition = widget.currentPosition;
     _lastIndex = _calculateCurrentIndex(_basePosition);
     _maxIndexReached = _lastIndex;
-    _scrollController = FixedExtentScrollController(
-      initialItem: _lastIndex >= 0 ? _lastIndex : 0,
-    );
+
+    final double initOffset = _lastIndex > 0
+        ? _offsetForIndex(_lastIndex).clamp(0.0, double.infinity)
+        : 0.0;
+
+    _scrollController = ScrollController(initialScrollOffset: initOffset);
     WidgetsBinding.instance.addObserver(this);
 
     _ticker = createTicker((elapsed) {
@@ -242,19 +343,25 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
       _maxIndexReached = currentIndex;
     }
 
+    // setState 먼저 → 하이라이트 즉시 반영 후 스크롤 이동
+    if (mounted) setState(() {});
+
+    final double maxScroll = _scrollController.position.maxScrollExtent;
+    final double offset = _offsetForIndex(currentIndex).clamp(0.0, maxScroll);
+
     if (skipped >= 2) {
       // 2개 이상 건너뛰면 무조건 즉시 점프
-      _scrollController.jumpToItem(currentIndex);
+      _scrollController.jumpTo(offset);
     } else if (skipped == 1 && _isSlowTransition(currentIndex, precisePos)) {
       // 🚀 느린 곡(다음 가사까지 600ms+)만 짧은 애니메이션 허용
-      _scrollController.animateToItem(
-        currentIndex,
-        duration: const Duration(milliseconds: 180),
+      _scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
     } else {
       // 빠른 곡 or 역방향 → 즉시 점프 (애니메이션 누적 방지)
-      _scrollController.jumpToItem(currentIndex);
+      _scrollController.jumpTo(offset);
     }
   }
 }
@@ -301,7 +408,9 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
         _maxIndexReached = newIndex; // 최대 도달 지점 리셋 (Seek 대응)
 
         if (_scrollController.hasClients) {
-          _scrollController.jumpToItem(newIndex >= 0 ? newIndex : 0);
+          _scrollController.jumpTo(
+            _offsetForIndex(newIndex >= 0 ? newIndex : 0).clamp(0.0, double.infinity),
+          );
         }
       }
     }
@@ -312,7 +421,7 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
       _elapsedSinceSync = Duration.zero;
       _lastIndex = -1;
       _maxIndexReached = -1;
-      if (_scrollController.hasClients) _scrollController.jumpToItem(0);
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
     }
   }
 
@@ -327,7 +436,9 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
     _lastIndex = newIndex;
     _maxIndexReached = newIndex;
     if (_scrollController.hasClients) {
-      _scrollController.jumpToItem(newIndex >= 0 ? newIndex : 0);
+      _scrollController.jumpTo(
+        _offsetForIndex(newIndex >= 0 ? newIndex : 0).clamp(0.0, double.infinity),
+      );
     }
   }
 }
@@ -380,8 +491,8 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
     _ticker.dispose();
     _debounceTimer?.cancel();
     _scrollController.dispose();
-    super.dispose();
     WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
 
@@ -472,66 +583,32 @@ Widget build(BuildContext context) {
               child: RepaintBoundary(
                 child: widget.lyrics.isEmpty
                     ? _buildEmptyContent()
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final double width = constraints.maxWidth;
-                          final double responsiveBaseSize =
-                              (width * 0.05).clamp(16.0, 20.0);
-                          final double responsiveCurrentSize =
-                              (width * 0.065).clamp(20.0, 28.0);
-
-                          return NotificationListener<ScrollNotification>(
-                            onNotification: (notification) {
-                              if (notification is ScrollStartNotification) {
-                                _onUserInteraction();
-                              }
-                              return false;
-                            },
-                            child: ListWheelScrollView.useDelegate(
-                              controller: _scrollController,
-                              itemExtent: responsiveCurrentSize * 3.0,
-                              physics: const FixedExtentScrollPhysics(),
-                              clipBehavior: Clip.hardEdge,
-                              diameterRatio: 3.0,
-                              perspective: 0.001,
-                              childDelegate: ListWheelChildBuilderDelegate(
-                                childCount: widget.lyrics.length,
-                                builder: (context, index) {
-                                  final isCurrent = index == currentIndex;
-                                  return Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 30),
-                                      child: DefaultTextStyle(
-                                        style: TextStyle(
-                                          color: isCurrent
-                                              ? Colors.white
-                                              : Colors.white
-                                                  .withValues(alpha: 0.25),
-                                          fontSize: isCurrent
-                                              ? responsiveCurrentSize
-                                              : responsiveBaseSize,
-                                          fontWeight: isCurrent
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                          height: 1.3,
-                                          letterSpacing: -0.5,
-                                        ),
-                                        child: Text(
-                                          widget.lyrics[index].text,
-                                          textAlign: TextAlign.center,
-                                          softWrap: true,
-                                          maxLines: 4,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          );
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (notification is ScrollStartNotification &&
+                              notification.dragDetails != null) {
+                            _onUserInteraction();
+                          }
+                          return false;
                         },
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          physics: const BouncingScrollPhysics(),
+                          // 상하 padding = size/2 - itemExtent/2
+                          // → 첫/마지막 아이템도 정중앙에 올 수 있음
+                          // → offset = index * itemExtent 이 정확히 중앙
+                          padding: EdgeInsets.symmetric(
+                            vertical: widget.size / 2 - _itemExtent / 2,
+                          ),
+                          itemCount: widget.lyrics.length,
+                          itemExtent: _itemExtent,
+                          itemBuilder: (context, index) => _LyricItem(
+                            text: widget.lyrics[index].text ?? '',
+                            isCurrent: index == currentIndex,
+                            baseSize: _baseSize,
+                            currentSize: _currentSize,
+                          ),
+                        ),
                       ),
               ),
             ),
