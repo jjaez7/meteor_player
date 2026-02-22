@@ -7,7 +7,7 @@ class AdService {
   static const String _lifetimeKey = "is_lifetime_pro";
   static const String _installTimeKey = "app_install_time";
 
-  static String get rewardedAdUnitId => 'ca-app-pub-3940256099942544/5224354917';
+  static String get rewardedAdUnitId => 'ca-app-pub-5949819290701359/9933754081';
 
   static bool _isAdLoading = false;
   static int _watchedCount = 0;

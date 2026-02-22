@@ -77,7 +77,19 @@ class MyAudioHandler extends BaseAudioHandler {
   
   // (옵션) 전체 길이 스트림도 있으면 편합니다.
   Stream<Duration> get duration => mediaItem.map((item) => item?.duration ?? Duration.zero).distinct();
-  
+
+  // 🚀 앱 복귀 시 Surface 재구성 동안 스트림 신호를 잠깐 차단하는 플래그
+  bool _isSuppressed = false;
+
+  /// player_screen의 didChangeAppLifecycleState(resumed)에서 호출.
+  /// Android가 IME Input Channel을 재구성하는 800ms 동안 EventChannel 신호를 무시.
+  void suppressForResume() {
+    _isSuppressed = true;
+    Future.delayed(const Duration(milliseconds: 800), () {
+      _isSuppressed = false;
+    });
+  }
+
   MyAudioHandler() {
     // 초기 상태 설정
     playbackState.add(
@@ -100,6 +112,8 @@ class MyAudioHandler extends BaseAudioHandler {
 
     // 🚀 네이티브 스트림 최적화
     _statusChannel.receiveBroadcastStream().listen((data) async {
+      // 🚀 resume 직후 Surface/IME 재구성 중에는 신호 무시 (Input Channel 충돌 방지)
+      if (_isSuppressed) return;
       try {
         if (data == null) return;
         final mediaData = Map<String, dynamic>.from(data);

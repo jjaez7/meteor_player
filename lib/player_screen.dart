@@ -308,6 +308,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   String _lastFetchedSongId = "";
   int _lastRequestToken = 0;
 
+  // 🚀 duration 재시도 횟수 제한 — 무한 재귀로 IME 충돌 반복 방지
+  int _durationRetryCount = 0;
+  static const int _maxDurationRetry = 3;
+
   Future<void> _updateLyrics(dynamic item) async {
     _positionNotifier.value = Duration.zero;
 
@@ -607,10 +611,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 유튜브 뮤직 등 다른 곳에서 조작하고 돌아왔을 때 즉시 상태 동기화
-      _fetchInitialStatus();
+      // 🚀 Surface 재구성 + IME Input Channel 안정화 대기
+      // resumed 즉시 호출 시 Android Surface 재구성 도중 MethodChannel이 끼어들어
+      // IME Input Channel 충돌 발생. postFrameCallback + 500ms 2단계 대기.
+      _durationRetryCount = 0; // 복귀 시 재시도 카운터 리셋
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _fetchInitialStatus();
+        });
+      });
     }
   }
+
 
   Future<void> _fetchInitialStatus() async {
     try {
@@ -628,19 +640,24 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
           _isPlaying = data['isPlaying'] ?? false;
 
-          // 🚀 [수정] 전체 길이 동기화 로직 강화
+          // 🚀 [수정] 전체 길이 동기화 로직 강화 + 재시도 횟수 제한
           if (data['duration'] != null) {
             final int durMs = (data['duration'] as num).toInt();
 
             if (durMs > 0) {
               _totalDuration = Duration(milliseconds: durMs);
+              _durationRetryCount = 0; // 성공 시 카운터 리셋
               debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
-            } else {
-              // ⚠️ 길이가 0이라면 시스템이 아직 정보를 준비 못한 것임
-              debugPrint("⚠️ 전체 길이 정보가 0입니다. 1초 후 재시도합니다.");
+            } else if (_durationRetryCount < _maxDurationRetry) {
+              // 🚀 최대 3회만 재시도 — 무한 재귀로 IME 채널과 충돌하는 것 방지
+              _durationRetryCount++;
+              debugPrint("⚠️ 전체 길이 0, 재시도 $_durationRetryCount/$_maxDurationRetry");
               Future.delayed(const Duration(seconds: 1), () {
-                if (mounted) _fetchInitialStatus(); // 1초 뒤 한 번 더 데이터 요청
+                if (mounted) _fetchInitialStatus();
               });
+            } else {
+              debugPrint("⚠️ 전체 길이 재시도 한도 초과, 포기합니다.");
+              _durationRetryCount = 0;
             }
           }
         });

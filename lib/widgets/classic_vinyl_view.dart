@@ -431,15 +431,29 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
     _basePosition = widget.currentPosition;
     _elapsedSinceSync = Duration.zero;
 
-    // 추가할 부분: 복귀 즉시 가사 위치를 계산해서 스크롤을 점프시켜야 함
     int newIndex = _calculateCurrentIndex(_basePosition);
     _lastIndex = newIndex;
     _maxIndexReached = newIndex;
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(
-        _offsetForIndex(newIndex >= 0 ? newIndex : 0).clamp(0.0, double.infinity),
-      );
+
+    // ✅ 핵심: IME Input Channel이 안정화된 뒤 다음 프레임에 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(
+          _offsetForIndex(newIndex >= 0 ? newIndex : 0).clamp(0.0, double.infinity),
+        );
+      }
+    });
+
+    // ticker도 재시작이 필요하다면 여기서
+    if (widget.isPlaying && !_ticker.isTicking) {
+      _ticker.start();
     }
+  }
+
+  // 백그라운드 갈 때 ticker 멈춰서 불필요한 연산 차단 (보너스)
+  if (state == AppLifecycleState.paused) {
+    if (_ticker.isTicking) _ticker.stop();
   }
 }
 
