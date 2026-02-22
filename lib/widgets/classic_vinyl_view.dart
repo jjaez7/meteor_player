@@ -191,7 +191,7 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
 
   // 🚀 Ticker 쓰로틀링: 매 프레임(16ms)마다 체크하지 않고 최소 간격 유지
   Duration _lastTickerCheck = Duration.zero;
-  static const Duration _throttleInterval = Duration(milliseconds: 40);
+  static const Duration _throttleInterval = Duration(milliseconds: 25);
 
   @override
   void initState() {
@@ -445,7 +445,7 @@ Widget build(BuildContext context) {
             Positioned.fill(
               child: RepaintBoundary(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -492,8 +492,8 @@ Widget build(BuildContext context) {
                               itemExtent: responsiveCurrentSize * 3.0,
                               physics: const FixedExtentScrollPhysics(),
                               clipBehavior: Clip.hardEdge,
-                              diameterRatio: 2.0,
-                              perspective: 0.002,
+                              diameterRatio: 3.0,
+                              perspective: 0.001,
                               childDelegate: ListWheelChildBuilderDelegate(
                                 childCount: widget.lyrics.length,
                                 builder: (context, index) {
@@ -502,9 +502,7 @@ Widget build(BuildContext context) {
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 30),
-                                      child: AnimatedDefaultTextStyle(
-                                        duration:
-                                            const Duration(milliseconds: 300),
+                                      child: DefaultTextStyle(
                                         style: TextStyle(
                                           color: isCurrent
                                               ? Colors.white
