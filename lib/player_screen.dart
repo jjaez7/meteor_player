@@ -1155,23 +1155,19 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         bgColor: _bgColor,
         barColor: _barColor,
         onSeek: (ratio) {
-          // 1. 실제 오디오 탐색
-          PlayerLogic.seekTo(ratio);
+  // 1. 오디오 탐색
+  PlayerLogic.seekTo(ratio);
 
-          // 2. 가사 동기화
-          if (_totalDuration != null) {
-            final targetMs = _totalDuration!.inMilliseconds * ratio;
-            final targetPosition = Duration(milliseconds: targetMs.toInt());
-
-            // 🚀 핵심: setState를 사용하여 UI를 즉시 강제 갱신합니다.
-            // 리로딩 효과를 주어 엉뚱한 곳으로 튀는 것을 막아줍니다.
-            setState(() {
-              _positionNotifier.value = targetPosition;
-            });
-
-            debugPrint("🎯 가사 수동 이동 및 화면 갱신: $targetPosition");
-          }
-        },
+  // 2. duration을 _totalDuration 대신 audioHandler에서 직접 읽기 (null 방지)
+  final duration = _totalDuration ?? audioHandler.mediaItem.value?.duration;
+  if (duration != null && duration.inMilliseconds > 0) {
+    final targetPosition = Duration(
+      milliseconds: (duration.inMilliseconds * ratio).toInt(),
+    );
+    _positionNotifier.value = targetPosition; // setState 불필요, ValueNotifier가 자동 rebuild
+    debugPrint("🎯 가사 수동 이동 및 화면 갱신: $targetPosition");
+  }
+},
       ),
     );
   }

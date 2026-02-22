@@ -390,8 +390,8 @@ class _LyricsAutoScrollerState extends State<_LyricsAutoScroller>
 
       // [판단] 사용자가 진행바를 옮겼거나(Seek), 곡이 바뀌었을 때만 강제 재동기화
       // 1.2초 미만의 미세한 오차는 시스템 신호가 '느린 것'이므로 무시하여 튀는 현상 방지
-      bool isSeek = (widget.currentPosition - oldWidget.currentPosition).abs().inMilliseconds > 800 ||
-                    widget.currentPosition < oldWidget.currentPosition;
+      bool isSeek = (widget.currentPosition - oldWidget.currentPosition).abs().inMilliseconds > 300 ||
+              widget.currentPosition < oldWidget.currentPosition;
 
       if (isSeek || drift > const Duration(milliseconds: 500)) {
         _basePosition = widget.currentPosition;
