@@ -865,26 +865,35 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             // ── 우: 글래스 정보 패널 + 시계 패널 ─────────────────────
             Expanded(
               flex: 35,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _buildGlassInfoPanel(
-                      Size(panelW, available),
-                      available,
-                      verticalPad: vPad,
-                      isLandscape: true,
-                      titleFontSize: titleFs,
-                      artistFontSize: artistFs,
-                      itemGap: itemGap,
-                      bigGap: bigGap,
-                      hInnerPad: hInnerPad,
-                      innerW: innerW,
-                    ),
-                  ),
-                  SizedBox(height: hPad),
-                  _buildClockPanel(panelW),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 시계 패널 최소 높이 = 약 44px. 그보다 공간이 부족하면 숨김
+                  final double clockH = (panelW * 0.14).clamp(16.0, 28.0) + 20.0; // timeFontSize + padding
+                  final bool showLandscapeClock = constraints.maxHeight > clockH + 80;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _buildGlassInfoPanel(
+                          Size(panelW, available),
+                          available,
+                          verticalPad: vPad,
+                          isLandscape: true,
+                          titleFontSize: titleFs,
+                          artistFontSize: artistFs,
+                          itemGap: itemGap,
+                          bigGap: bigGap,
+                          hInnerPad: hInnerPad,
+                          innerW: innerW,
+                        ),
+                      ),
+                      if (showLandscapeClock) ...[
+                        SizedBox(height: hPad),
+                        _buildClockPanel(panelW),
+                      ],
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -1310,8 +1319,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     // ── 높이 배분: clockPanelH를 비율로만 계산해 합계 초과 방지
     // available이 아무리 작아도 각 영역이 음수/0이 되지 않도록 비율 기반으로 처리
     final double gap         = hPad * 0.5;
-    final double clockPanelH = (available * 0.07).clamp(0.0, 64.0); // 최솟값 0으로 완화
-    final double remaining   = (available - clockPanelH - gap * 2).clamp(0.0, double.infinity);
+
+    // 오버플로우 감지: 화면이 너무 작으면 시계 패널을 숨기고 공간을 위 영역에 양보
+    // 기준: available < 400px 이하일 때 시계 숨김 (글래스 패널 + 턴테이블 최소 확보 우선)
+    final bool showPortraitClock = available >= 400.0;
+    final double clockPanelH = showPortraitClock
+        ? (available * 0.07).clamp(0.0, 64.0)
+        : 0.0;
+    final double clockGap = showPortraitClock ? gap : 0.0;
+    final double remaining   = (available - clockPanelH - gap - clockGap).clamp(0.0, double.infinity);
     final double turntableH  = remaining * 0.585;
     final double panelH      = remaining * 0.415;
     // Padding(vertical:4) = 위아래 8px → 실제 패널 콘텐츠 높이
@@ -1443,16 +1459,17 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             ),
           ),
 
-          SizedBox(height: gap),
-
-          // ── 시계 패널 (5번 탭 → 가사 토글) ──────────────────────────
-          SizedBox(
-            height: clockPanelH,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: hPad),
-              child: _buildPortraitClockPanel(size.width - hPad * 2),
+          // ── 시계 패널 (5번 탭 → 가사 토글) ── 오버플로우 시 숨김 ────
+          if (showPortraitClock) ...[
+            SizedBox(height: clockGap),
+            SizedBox(
+              height: clockPanelH,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad),
+                child: _buildPortraitClockPanel(size.width - hPad * 2),
+              ),
             ),
-          ),
+          ],
 
           SizedBox(height: botPad),
         ],
@@ -1791,10 +1808,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             Container(
                               width: lpSize * 0.07,
                               height: lpSize * 0.07,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Color(0xFFD4AF37),
-                                boxShadow: [
+                                color: const Color(0xFFD4AF37),
+                                boxShadow: const [
                                   BoxShadow(
                                     color: Colors.black45,
                                     blurRadius: 4,
@@ -2037,10 +2054,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                 Container(
                                   width: artSize * 0.08,
                                   height: artSize * 0.08,
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: Color(0xFFD4AF37),
-                                    boxShadow: [
+                                    color: const Color(0xFFD4AF37),
+                                    boxShadow: const [
                                       BoxShadow(color: Colors.black45, blurRadius: 4),
                                     ],
                                   ),

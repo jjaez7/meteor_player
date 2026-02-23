@@ -120,7 +120,7 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
     final double boxH = boxW * 0.72; // 하단 컨트롤 패널 없으므로 더 콤팩트
 
     // LP 중심 (박스 내 절대 좌표)
-    final double lpCX = boxW * 0.34;
+    final double lpCX = boxW * 0.41;
     final double lpCY = boxH * 0.50;
 
     return SizedBox(
@@ -200,7 +200,7 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
 
           // ⑤ 톤암 (바늘)
           Positioned(
-            right: boxW * 0.02,
+            right: boxW * 0.06,
             top: lpCY - lpSize * 0.12,
             child: _TonearmWidget(
               lpController: widget.lpController,
@@ -364,12 +364,18 @@ class _TonearmWidget extends StatelessWidget {
       animation: Listenable.merge([tonearmController, lpController]),
       builder: (context, _) {
         // ── 각도 정의 (단위: radians)
-        // restAngle     = 대기 위치 각도 (LP 바깥쪽, 오른쪽으로 많이 젖혀짐)
-        // playStartAngle = 재생 시작 각도 (LP 외곽 그루브 위)
-        // playEndAngle  = 재생 끝 각도   (LP 중심 그루브 위)
-        const double restAngle = 0.74;      // ~42° — 대기(정지) 시 바깥 위치
-        const double playStartAngle = 0.27; // ~15° — 재생 시작 (LP 외곽)
-        const double playEndAngle = 0.04;   // ~2°  — 재생 끝   (LP 중심)
+        //
+        // 레이아웃: 피벗(오른쪽) — LP 중심(왼쪽)
+        // Transform(alignment: Alignment.topCenter).rotateZ 기준:
+        //   암의 기본방향 = 아래(+Y)
+        //   양수(+) = 시계방향  → 암이 오른쪽으로 기울어짐 (LP 바깥, 대기)
+        //   음수(-) = 반시계   → 암이 왼쪽으로 기울어짐  (LP 방향, 재생)
+        //
+        // 재생 시: restAngle(양수) → playAngle(음수) = 시계방향 회전으로 LP 위에 착지 ✓
+        // 정지 시: playAngle(음수) → restAngle(양수) = 반시계방향 회전으로 LP 바깥으로 들림 ✓
+        const double restAngle = -0.15;      // 대기: LP에 더 가깝게
+        const double playStartAngle = 0.65;  // 재생 시작: 이동 각도 줄임
+        const double playEndAngle = 0.90;    // 재생 끝: LP 내곽 방향
 
         // tonearmController.value 의미:
         //   0.0 → restAngle (대기/정지)
@@ -381,12 +387,13 @@ class _TonearmWidget extends StatelessWidget {
             playStartAngle + (playEndAngle - playStartAngle) * progress;
 
         // 최종 각도: restAngle ↔ playAngle 사이를 landFactor로 lerp
-        // landFactor=0 → restAngle (정지, 바깥)
+        // landFactor=0 → restAngle (정지, 오른쪽 바깥)
         // landFactor=1 → playAngle (재생, LP 위)
         final double finalAngle =
             restAngle + (playAngle - restAngle) * landFactor;
 
-        final double armLen = lpRadius * 1.32;
+        // 피벗→LP 외곽까지 실제 거리에 맞춘 암 길이
+        final double armLen = lpRadius * 1.1;
 
         return GestureDetector(
           onTap: onTap,
@@ -397,9 +404,6 @@ class _TonearmWidget extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.topCenter,
               children: [
-                // 피벗(회전축)
-                _buildPivot(),
-
                 // 암 본체
                 Transform(
                   alignment: Alignment.topCenter,
@@ -429,8 +433,10 @@ class _TonearmWidget extends StatelessWidget {
                       ),
 
                       // 헤드쉘 조인트 꺾임
+                      // 암이 음수 각도(왼쪽=LP 방향)로 내려올 때
+                      // 헤드쉘은 LP 중심을 향해 시계방향(+)으로 꺾여야 함
                       Transform.rotate(
-                        angle: -0.22,
+                        angle: 0.22,
                         child: Container(
                           width: 14, height: armLen * 0.09,
                           decoration: BoxDecoration(
@@ -442,9 +448,9 @@ class _TonearmWidget extends StatelessWidget {
                         ),
                       ),
 
-                      // 헤드쉘
+                      // 헤드쉘 (LP 중심 방향으로 시계방향 꺾임)
                       Transform.rotate(
-                        angle: -0.28,
+                        angle: 0.28,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -500,6 +506,9 @@ class _TonearmWidget extends StatelessWidget {
                     ],
                   ),
                 ),
+
+                // 피벗(회전축) — 암 위에 그려서 겹치는 부분 가림
+                _buildPivot(),
               ],
             ),
           ),

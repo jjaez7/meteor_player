@@ -110,25 +110,37 @@ class ArtistTextWidget extends StatelessWidget {
     final size = MediaQuery.of(context).size;
     final bool isFlipCover = size.width > size.height && size.width < 600;
 
-    return Text(
-      artist.toUpperCase(),
-      textAlign: TextAlign.left,
-      maxLines: isFlipCover ? 1 : 2,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: isFlipCover ? fontSize * 0.9 : fontSize,
-        color: Colors.white.withValues(alpha: 0.6),
-        fontWeight: FontWeight.w600,
-        letterSpacing: isFlipCover ? 1.0 : 2.0,
-        fontFamily: 'sans-serif-medium',
-        shadows: [
-          Shadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            offset: const Offset(0, 2),
-            blurRadius: 10,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 부모가 유한한 너비를 주면 그것을, 아니면 화면 80%를 상한으로 사용
+        final double maxW = (constraints.maxWidth.isFinite && constraints.maxWidth > 0)
+            ? constraints.maxWidth
+            : size.width * 0.8;
+
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxW),
+          child: Text(
+            artist.toUpperCase(),
+            textAlign: TextAlign.left,
+            maxLines: isFlipCover ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: isFlipCover ? fontSize * 0.9 : fontSize,
+              color: Colors.white.withValues(alpha: 0.6),
+              fontWeight: FontWeight.w600,
+              letterSpacing: isFlipCover ? 1.0 : 2.0,
+              fontFamily: 'sans-serif-medium',
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  offset: const Offset(0, 2),
+                  blurRadius: 10,
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
