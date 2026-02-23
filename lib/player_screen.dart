@@ -638,6 +638,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   _buildPortraitFullLayout(size, config)
                 else if (!isPortrait && !isSpecialMode)
                   _buildLandscapeFullLayout(size, config)
+                else if (_isPipMode)
+                  _buildPipLayout(size)
                 else
                   _buildLegacyLayout(size, config, isPortrait, isSpecialMode),
 
@@ -1600,7 +1602,176 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // 기존 자유 배치 레이아웃 (가로 모드 / PiP / 플립커버)
+  // PiP 전용 레이아웃
+  //
+  // 시스템 PiP 창은 보통 매우 작음 (예: 200×120). 따라서:
+  //  - LP 디스크 + 앨범아트만 중앙에 크게 표시
+  //  - 하단에 제목 1줄 + 가수명
+  //  - 재생 버튼 없음
+  //  - 모든 크기를 size 기준 비율로 계산 → 작은 화면에서도 overflow 없음
+  // ══════════════════════════════════════════════════════════════════════
+  Widget _buildPipLayout(Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    // LP + 정보 영역을 비율로 분할 (재생버튼 없으므로 LP 더 크게)
+    final double lpAreaH  = h * 0.62;
+    final double infoH    = h * 0.38;
+
+    final double lpSize   = (lpAreaH * 0.85).clamp(0.0, double.infinity);
+    final double titleFs  = (infoH * 0.38).clamp(9.0, 14.0);
+    final double artistFs = (infoH * 0.26).clamp(7.0, 11.0);
+
+    return Positioned.fill(
+      child: Column(
+        children: [
+          // ── LP + 앨범아트 ─────────────────────────────────────────
+          SizedBox(
+            height: lpAreaH,
+            child: Center(
+              child: StreamBuilder(
+                stream: const EventChannel('com.glasnyl.app/media_status').receiveBroadcastStream(),
+                builder: (context, snapshot) {
+                  double progress = 0.0;
+                  if (snapshot.hasData && snapshot.data != null) {
+                    try {
+                      final data = Map<String, dynamic>.from(snapshot.data);
+                      final int pos = data['position'] ?? 0;
+                      final int dur = data['duration'] ?? 0;
+                      if (dur > 0) progress = (pos / dur).clamp(0.0, 1.0);
+                    } catch (_) {}
+                  } else {
+                    // 스트림 데이터 없으면 _positionNotifier 폴백
+                    final pos = _positionNotifier.value;
+                    if (_totalDuration != null && _totalDuration!.inMilliseconds > 0) {
+                      progress = (pos.inMilliseconds / _totalDuration!.inMilliseconds).clamp(0.0, 1.0);
+                    }
+                  }
+                  return AnimatedBuilder(
+                    animation: _lpController,
+                    builder: (context, _) {
+                      return SizedBox(
+                        width: lpSize,
+                        height: lpSize,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // 외곽 그루브 링
+                            Container(
+                              width: lpSize,
+                              height: lpSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _lpColor,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    blurRadius: 12,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // 회전하는 앨범아트
+                            RotationTransition(
+                              turns: _lpController,
+                              child: Container(
+                                width: lpSize * 0.55,
+                                height: lpSize * 0.55,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _bgColor,
+                                  image: _albumArtBytes != null
+                                      ? DecorationImage(
+                                          image: MemoryImage(_albumArtBytes!),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            // 중앙 스핀들
+                            Container(
+                              width: lpSize * 0.07,
+                              height: lpSize * 0.07,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFFD4AF37),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black45,
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // 프로그레스 링 (얇은 호)
+                            SizedBox(
+                              width: lpSize * 0.92,
+                              height: lpSize * 0.92,
+                              child: CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: lpSize * 0.022,
+                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _barColor.withValues(alpha: 0.75),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // ── 제목 + 가수 ───────────────────────────────────────────
+          SizedBox(
+            height: infoH,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: w * 0.06),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    _currentTitle,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: titleFs,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: infoH * 0.08),
+                  Text(
+                    _currentArtist,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: artistFs,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 기존 자유 배치 레이아웃 (플립커버)
   // 기존 _buildEdit + Positioned 방식 그대로 유지
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildLegacyLayout(

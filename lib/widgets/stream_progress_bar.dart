@@ -19,38 +19,44 @@ class StreamProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-      // 부모 위젯과 별개로 이 스트림만 감시합니다.
-      stream: const EventChannel('com.glasnyl.app/media_status').receiveBroadcastStream(),
-      builder: (context, snapshot) {
-        double currentFactor = 0.0;
-        int duration = 1;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 실제 렌더된 너비를 우선 사용. 0이거나 무한이면 barWidth 폴백.
+        final double realWidth = (constraints.maxWidth > 0 && constraints.maxWidth != double.infinity)
+            ? constraints.maxWidth
+            : barWidth;
 
-        if (snapshot.hasData && snapshot.data != null) {
-          try {
-            final data = Map<String, dynamic>.from(snapshot.data);
-            if (data.containsKey('position') && data.containsKey('duration')) {
-              final int pos = data['position'] ?? 0;
-              final int dur = data['duration'] ?? 1;
-              currentFactor = (pos / dur).clamp(0.0, 1.0);
-            }
-          } catch (e) {
-            debugPrint("Progress factor calculation error: $e");
-          }
-        }
+        return StreamBuilder(
+          stream: const EventChannel('com.glasnyl.app/media_status').receiveBroadcastStream(),
+          builder: (context, snapshot) {
+            double currentFactor = 0.0;
 
-        // 튕김 방지 로직이 들어있는 기존 위젯 호출
-        return ProgressBarWidget(
-          width: barWidth,
-          factor: currentFactor,
-          bgColor: bgColor,
-          barColor: barColor,
-          onSeek: (newRatio) {
-            if (onSeek != null) {
-              onSeek!(newRatio);
-            } else {
-              PlayerLogic.seekTo(newRatio); // 기본 동작
+            if (snapshot.hasData && snapshot.data != null) {
+              try {
+                final data = Map<String, dynamic>.from(snapshot.data);
+                if (data.containsKey('position') && data.containsKey('duration')) {
+                  final int pos = data['position'] ?? 0;
+                  final int dur = data['duration'] ?? 1;
+                  currentFactor = (pos / dur).clamp(0.0, 1.0);
+                }
+              } catch (e) {
+                debugPrint("Progress factor calculation error: $e");
+              }
             }
+
+            return ProgressBarWidget(
+              width: realWidth,
+              factor: currentFactor,
+              bgColor: bgColor,
+              barColor: barColor,
+              onSeek: (newRatio) {
+                if (onSeek != null) {
+                  onSeek!(newRatio);
+                } else {
+                  PlayerLogic.seekTo(newRatio);
+                }
+              },
+            );
           },
         );
       },

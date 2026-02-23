@@ -122,123 +122,145 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
   double? _dragFactor;
   bool _isSeeking = false;
 
+  // 노브 반지름 — 노브 크기(18px)의 절반
+  static const double _knobR = 9.0;
+
+  /// 실제 렌더된 [trackW] 기준으로 factor → 노브 left 픽셀 변환.
+  /// 트랙의 유효 구간은 [_knobR, trackW - _knobR] 이므로
+  /// factor=0 → knobR, factor=1 → trackW - knobR
+  double _factorToLeft(double factor, double trackW) {
+    final usable = (trackW - _knobR * 2).clamp(0.0, double.infinity);
+    return _knobR + usable * factor - _knobR; // knobR 빼서 Positioned.left가 노브 왼쪽 끝 기준
+  }
+
+  /// 터치 위치 dx → factor 변환 (유효 구간 기준)
+  double _dxToFactor(double dx, double trackW) {
+    final usable = (trackW - _knobR * 2).clamp(1.0, double.infinity);
+    return ((dx - _knobR) / usable).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 이동 중일 때는 사용자의 손가락 위치를, 평소에는 재생 위치를 보여줍니다.
     final displayFactor = (_isSeeking && _dragFactor != null)
         ? _dragFactor!.clamp(0.0, 1.0)
         : widget.factor.clamp(0.0, 1.0);
 
-    return GestureDetector(
-      onHorizontalDragUpdate: (details) {
-        setState(() {
-          _isSeeking = true;
-          _dragFactor = (details.localPosition.dx / widget.width).clamp(0.0, 1.0);
-        });
-        _handleSeek(_dragFactor!);
-      },
-      onHorizontalDragEnd: (_) async {
-        // 스트림 업데이트와 충돌 방지를 위한 지연 시간
-        await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) {
-          setState(() {
-            _dragFactor = null;
-            _isSeeking = false;
-          });
-        }
-      },
-      onTapDown: (details) async {
-        double newFactor = (details.localPosition.dx / widget.width).clamp(0.0, 1.0);
-        setState(() {
-          _isSeeking = true;
-          _dragFactor = newFactor;
-        });
-        _handleSeek(newFactor);
-        await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) {
-          setState(() {
-            _dragFactor = null;
-            _isSeeking = false;
-          });
-        }
-      },
-      child: Container(
-        width: widget.width,
-        height: 40, // 조작 편의를 위한 넓은 터치 영역
-        color: Colors.transparent, // 영역 시각화 방지
-        child: Center(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 1. [배경 바] 불투명한 유리의 느낌 (Glass Base)
-              Container(
-                width: widget.width,
-                height: 6, // 요즘은 아주 얇은 것보다 살짝 두께감 있는 게 트렌드
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              
-              // 2. [진행 바] 쨍한 화이트 + 은은한 Glow 효과
-              Container(
-                width: widget.width * displayFactor,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
+    // LayoutBuilder로 실제 렌더 너비를 측정 → 가로/세로 전환 시 정확한 계산
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 부모가 주는 최대 너비를 우선 사용. 0이면 widget.width 폴백.
+        final double trackW = (constraints.maxWidth > 0 && constraints.maxWidth != double.infinity)
+            ? constraints.maxWidth
+            : widget.width.clamp(1.0, double.infinity);
 
-              // 3. [노브] 물리적 버튼이 아닌, 빛나는 포인트 느낌
-              Positioned(
-                left: (widget.width * displayFactor) - 9,
-                top: -6,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      // 🚀 노브가 공중에 떠 있는 것처럼 보이게 하는 깊은 그림자
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+        // 노브 left = 트랙 시작점(0) + usable * factor
+        final double knobLeft = (trackW - _knobR * 2).clamp(0.0, double.infinity) * displayFactor;
+        // 진행 바 너비 = knobLeft + knobR (노브 중앙까지)
+        final double fillW = (knobLeft + _knobR).clamp(0.0, trackW);
+
+        return GestureDetector(
+          onHorizontalDragUpdate: (details) {
+            final f = _dxToFactor(details.localPosition.dx, trackW);
+            setState(() {
+              _isSeeking = true;
+              _dragFactor = f;
+            });
+            _handleSeek(f);
+          },
+          onHorizontalDragEnd: (_) async {
+            await Future.delayed(const Duration(milliseconds: 600));
+            if (mounted) setState(() { _dragFactor = null; _isSeeking = false; });
+          },
+          onTapDown: (details) async {
+            final f = _dxToFactor(details.localPosition.dx, trackW);
+            setState(() {
+              _isSeeking = true;
+              _dragFactor = f;
+            });
+            _handleSeek(f);
+            await Future.delayed(const Duration(milliseconds: 600));
+            if (mounted) setState(() { _dragFactor = null; _isSeeking = false; });
+          },
+          child: SizedBox(
+            width: trackW,
+            height: 40,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.centerLeft,
+              children: [
+                // 1. [배경 바] — 노브 반지름만큼 양쪽 안쪽에서 시작
+                Positioned(
+                  left: _knobR,
+                  right: _knobR,
+                  child: Container(
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  // 노브 안쪽에 아주 작은 점을 찍어 디테일을 살립니다 (선택 사항)
-                  child: Center(
-                    child: Container(
-                      width: 4,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
+                ),
+
+                // 2. [진행 바] — 배경 바와 같은 left 기준, fillW까지
+                Positioned(
+                  left: _knobR,
+                  child: Container(
+                    width: (fillW - _knobR).clamp(0.0, trackW - _knobR * 2),
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 3. [노브] — knobLeft가 노브 왼쪽 끝 기준. 항상 트랙 안에 존재
+                Positioned(
+                  left: knobLeft,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: _knobR * 2,
+                    height: _knobR * 2,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   void _handleSeek(double ratio) {
-    HapticFeedback.lightImpact(); // 햅틱 피드백은 짧고 간결하게
+    HapticFeedback.lightImpact();
     widget.onSeek(ratio);
   }
 }
