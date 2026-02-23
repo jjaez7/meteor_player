@@ -43,7 +43,10 @@ class MainActivity: AudioServiceActivity() {
     private val METHOD_CHANNEL = "com.glasnyl.app/media_control"
     private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
     private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
+    private val VOLUME_CHANNEL = "com.glasnyl.app/volume_events"
     private var eventSink: EventChannel.EventSink? = null
+    private var volumeEventSink: EventChannel.EventSink? = null
+    private var volumeObserver: android.database.ContentObserver? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastTitle: String? = null
     
@@ -171,6 +174,20 @@ class MainActivity: AudioServiceActivity() {
                         result.error("REFRESH_FAILED", "No active session to refresh", null)
                     }
                 }
+                "setVolume" -> {
+                    val volume = (call.argument<Double>("volume") ?: 0.8).coerceIn(0.0, 1.0)
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val targetVol = (volume * maxVol).toInt().coerceIn(0, maxVol)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                    result.success(null)
+                }
+                "getVolume" -> {
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    result.success(curVol.toDouble() / maxVol.toDouble())
+                }
                 else -> result.notImplemented()
             }
         }
@@ -183,6 +200,37 @@ class MainActivity: AudioServiceActivity() {
                 }
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
+                }
+            }
+        )
+
+        // 볼륨 버튼 이벤트 채널 — ContentObserver로 시스템 볼륨 변화 감지
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, VOLUME_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    volumeEventSink = events
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    // 앱 시작 시 현재 볼륨 즉시 전송
+                    val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    events?.success(curVol.toDouble() / maxVol.toDouble())
+                    // 이후 볼륨 변화 감지
+                    volumeObserver = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+                        override fun onChange(selfChange: Boolean) {
+                            val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            handler.post { volumeEventSink?.success(cur.toDouble() / maxVol.toDouble()) }
+                        }
+                    }
+                    contentResolver.registerContentObserver(
+                        android.provider.Settings.System.CONTENT_URI,
+                        true,
+                        volumeObserver!!
+                    )
+                }
+                override fun onCancel(arguments: Any?) {
+                    volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
+                    volumeObserver = null
+                    volumeEventSink = null
                 }
             }
         )
@@ -243,6 +291,7 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
     override fun onDestroy() {
         super.onDestroy()
         try { unregisterReceiver(pipReceiver) } catch (e: Exception) {}
+        volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
     }
 
     private fun pushStatusUpdate() {

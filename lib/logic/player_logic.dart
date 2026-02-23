@@ -78,4 +78,28 @@ class PlayerLogic {
       debugPrint("❌ Seek 오류: $e");
     }
   }
+
+  // --- [4] 볼륨 제어 ---
+
+  /// 시스템 미디어 볼륨 설정 (0.0 ~ 1.0)
+  static Future<void> setVolume(double volume) async {
+    try {
+      await _mediaChannel.invokeMethod('setVolume', {
+        'volume': volume.clamp(0.0, 1.0),
+      });
+    } catch (e) {
+      debugPrint("❌ setVolume 오류: $e");
+    }
+  }
+
+  /// 현재 시스템 미디어 볼륨 조회 (0.0 ~ 1.0)
+  static Future<double> getVolume() async {
+    try {
+      final result = await _mediaChannel.invokeMethod('getVolume');
+      return (result as num).toDouble().clamp(0.0, 1.0);
+    } catch (e) {
+      debugPrint("❌ getVolume 오류: $e");
+      return 0.8; // 기본값
+    }
+  }
 }

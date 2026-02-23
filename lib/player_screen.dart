@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
+import 'dart:ui';
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:notification_listener_service/notification_listener_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+
 import 'models/player_config.dart';
 import 'utils/layout_engine.dart';
 import 'widgets/editable_element.dart';
-//import 'widgets/vinyl_component.dart';
 import 'widgets/player_app_bar.dart';
-//import 'menu/menu_main.dart';
 import 'color_manager.dart';
 import 'main.dart';
 import 'widgets/player_elements.dart';
 import 'widgets/player_text_info.dart';
-import 'widgets/needle_component.dart';
 import 'logic/music_controller.dart';
 import 'logic/player_logic.dart';
-//import 'widgets/surreal_player_view.dart';
 import 'widgets/classic_vinyl_view.dart';
 import 'widgets/stream_progress_bar.dart';
-import 'dart:ui';
+import 'widgets/vinyl_turntable_view.dart';
 import 'features/screen_lock.dart';
-//import 'features/pip_handler.dart';
 import 'services/lyrics_service.dart';
-import 'dart:async';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'models/lyric_model.dart';
 import 'services/ad_service.dart';
 import 'menu/dialog_pass.dart';
 
@@ -37,88 +37,55 @@ class VinylPlayerScreen extends StatefulWidget {
 
 class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  // ── 모드 상태
   bool _isMinimalMode = false;
   bool _showLyrics = false;
   bool _isPipMode = false;
-
   bool _isScreenLocked = false;
+
+  // ── 가로 모드 하단 패널 토글 (볼륨 ↔ 가사), 기본: 볼륨
+  bool _landscapeShowLyrics = false;
+  int _clockTapCount = 0;
+  Timer? _clockTapTimer;
+
+  // ── 세로 모드 상단 패널 토글 (턴테이블 ↔ 가사), 기본: 턴테이블
+  bool _portraitShowLyrics = false;
+  int _portraitClockTapCount = 0;
+  Timer? _portraitClockTapTimer;
+
+  // ── 볼륨 (ValueNotifier — setState 없이 볼륨 패널만 rebuild)
+  final ValueNotifier<double> _volumeNotifier = ValueNotifier(0.8);
+
+  // ── 재생 상태
+  bool isEditMode = false;
+  bool _isPlaying = false;
   Duration? _totalDuration;
-  //bool _isSurrealMode = false;
-  // 기존 20줄짜리 코드를 이렇게 줄입니다.
-  Future<void> _handleAbsoluteColorReset() async {
-    final newColors = await PlayerLogic.handleAbsoluteColorReset();
-    setState(() {
-      _bgColor = newColors['bg']!;
-      _lpColor = newColors['lp']!;
-      _textColor = newColors['text']!;
-      _artistColor = newColors['artist']!;
-      _barColor = newColors['bar']!;
-      _playBtnColor = newColors['btn']!;
-    });
-  }
+  int _durationRetryCount = 0;
+  static const int _maxDurationRetry = 3;
 
-  void _handleResetLayout() async {
-    await PlayerLogic.resetLayout();
-    if (!mounted) return;
+  // ── 컨트롤러
+  late AnimationController _lpController;
+  late AnimationController _needleController; // 가사/미니멀 모드용
 
-    setState(() {
-      final size = MediaQuery.of(context).size;
-
-      // 🚀 LayoutEngine.calculate에 세 번째 인자(isPip)로 false를 전달합니다.
-      // 리셋은 보통 일반 모드에서 이루어지기 때문입니다.
-      _portraitConfig = LayoutEngine.calculate(
-        size,
-        Orientation.portrait,
-        false,
-      );
-      _landscapeConfig = LayoutEngine.calculate(
-        size,
-        Orientation.landscape,
-        false,
-      );
-    });
-  }
-
-  void _handleSeek(Duration targetTime) {
-    // 1. 시스템 오디오 핸들러에 탐색 명령 전달
-    audioHandler.seek(targetTime);
-
-    // 2. 현재 시간을 즉시 업데이트하여 UI 반응성 높임
-    _positionNotifier.value = targetTime;
-
-    // 3. 가사가 있다면, 변경된 시간에 맞는 가사 인덱스로 즉시 이동
-    if (_lyrics.isNotEmpty) {
-      int newIndex = _lyrics.lastIndexWhere((line) => line.time <= targetTime);
-      if (newIndex != -1) {
-        // 만약 가사 위젯에서 별도의 index 변수를 쓰고 있다면 여기서 setState를 해줍니다.
-        // 현재 ClassicVinylView 내부에서 realTimePos를 직접 보고 있다면
-        // notifier 업데이트만으로도 충분합니다.
-        debugPrint(
-          "🎯 수동 탐색 동기화: Index $newIndex (${targetTime.inMilliseconds}ms)",
-        );
-      }
-    }
-  }
-
-  // 클래스 상단 변수 선언부
-  final GlobalKey _progressKey = GlobalKey();
-  //final GlobalKey _titleKey = GlobalKey();
-
-  late AnimationController _lpController, _needleController;
-  bool isEditMode = false, _isPlaying = false;
+  // ── 레이아웃 (가로 모드 / PiP 용)
   PlayerConfig? _portraitConfig, _landscapeConfig;
-  DateTime? _lastSyncTime;
 
+  // ── 곡 정보
   String _currentTitle = "Ready to Play";
   String _currentArtist = "Artist NAME";
   Uint8List? _albumArtBytes;
+  DateTime? _lastSyncTime;
 
+  // ── 가사
   List<dynamic> _lyrics = [];
-  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(
-    Duration.zero,
-  );
+  LyricStatus _currentStatus = LyricStatus.loading;
+  String _lastFetchedSongId = "";
+  int _lastRequestToken = 0;
 
-  // 기본 테마 색상 설정
+  // ── 재생 위치 (ValueNotifier: setState 없이 가사 & 진행률 동기화)
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
+
+  // ── 색상 (앨범 아트에서 추출, 저장값 로드)
   Color _bgColor = const Color(0xFFE1E0E5);
   Color _lpColor = const Color(0xFF2A292E);
   Color _textColor = const Color(0xFF333335);
@@ -126,104 +93,82 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _barColor = const Color(0xFFB1A1D0);
   Color _playBtnColor = const Color(0xFF735DA5);
 
+  // ── 채널
   static const _pipChannel = MethodChannel('com.glasnyl.app/pip_status');
+  static const _volumeChannel = EventChannel('com.glasnyl.app/volume_events');
+  final GlobalKey _progressKey = GlobalKey();
 
+  // ──────────────────────────────────────────────────────────────────────
+  // initState
+  // ──────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     _startAccessGuardian();
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // PiP 채널
     _pipChannel.setMethodCallHandler((call) async {
       switch (call.method) {
         case "onPipModeChanged":
-          bool isInPip = call.arguments;
           if (mounted) {
             setState(() {
-              _isPipMode = isInPip;
-              if (isInPip) isEditMode = false;
+              _isPipMode = call.arguments as bool;
+              if (_isPipMode) isEditMode = false;
             });
           }
           break;
-
         case "onPipAction":
-          // 네이티브에서 invokeMethod("onPipAction", action)으로 보냈으므로
-          // arguments는 Map이 아니라 문자열(String) 그 자체입니다.
-          final String actionName = call.arguments.toString();
-          debugPrint("📥 PiP 신호 수신: $actionName");
-
-          // 문자열 비교 시 공백 제거 및 대문자 확인으로 더 확실하게 처리
-          if (actionName.trim() == "TOGGLE") {
-            debugPrint("✅ 재생 토글 실행");
-            _handleInternalToggle();
-          } else if (actionName.trim() == "NEXT") {
-            debugPrint("✅ 다음 곡 실행");
-            PlayerLogic.skipNext();
-          } else if (actionName.trim() == "PREV") {
-            debugPrint("✅ 이전 곡 실행");
-            PlayerLogic.skipPrevious();
-          }
+          final action = call.arguments.toString().trim();
+          if (action == "TOGGLE") _handleInternalToggle();
+          else if (action == "NEXT") PlayerLogic.skipNext();
+          else if (action == "PREV") PlayerLogic.skipPrevious();
           break;
       }
     });
+
     WakelockPlus.enable();
 
-    // 1. 애니메이션 컨트롤러 초기화 (addListener는 계속 삭제된 상태 유지)
+    // 애니메이션 컨트롤러
     _lpController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    );
-
+      vsync: this, duration: const Duration(seconds: 20));
     _needleController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
+      vsync: this, duration: const Duration(milliseconds: 1000));
 
-    // 1. 재생 위치 리스너
+    // 재생 위치
     audioHandler.position.listen((pos) {
-      debugPrint("🕒 시계 심박동: ${pos.inMilliseconds}ms");
-      if (mounted) _positionNotifier.value = pos; // setState 없이 값만 주입
+      if (mounted) _positionNotifier.value = pos;
     });
 
-    // 2. 가사 로딩 및 곡 변경 리스너 (해결 핵심)
+    // 곡 변경
     audioHandler.mediaItem.listen((item) {
-      if (item != null && mounted) {
-        // 🚀 [중요] 곡 제목이 '실제로' 다를 때만 모든 데이터를 초기화합니다.
-        // 이 조건이 없으면 가사 로딩 중에 제목 정보를 다시 받으면서 시계가 0으로 튕깁니다.
-        if (_currentTitle != item.title) {
-          _positionNotifier.value = Duration.zero;
-
-          setState(() {
-            _currentTitle = item.title;
-            _currentArtist = (item.artist ?? "Unknown").toUpperCase();
-            _lyrics = [];
-            _lastFetchedSongId = "";
-            _currentStatus = LyricStatus.loading;
-          });
-
-          _updateLyrics(item);
-        }
+      if (item != null && mounted && _currentTitle != item.title) {
+        _positionNotifier.value = Duration.zero;
+        setState(() {
+          _currentTitle = item.title;
+          _currentArtist = (item.artist ?? "Unknown").toUpperCase();
+          _lyrics = [];
+          _lastFetchedSongId = "";
+          _currentStatus = LyricStatus.loading;
+        });
+        _updateLyrics(item);
       }
     });
 
+    // 재생 상태
     audioHandler.playbackState.listen((state) {
       if (!mounted) return;
-
       if (state.playing) {
-        // 재생 중 신호가 오면 바늘 내림
         if (_needleController.status != AnimationStatus.forward &&
             _needleController.value < 1.0) {
           _needleController.forward();
         }
         if (!_lpController.isAnimating) _lpController.repeat();
       } else {
-        // 멈춤 신호가 오면 바늘 올림 (이게 해결 핵심!)
         if (_needleController.status != AnimationStatus.reverse &&
             _needleController.value > 0.0) {
           _needleController.reverse();
         }
-
-        // LP는 바늘이 올라가기 시작한 뒤 약간 뒤에 멈춤
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted && !audioHandler.playbackState.value.playing) {
             _lpController.stop();
@@ -232,52 +177,72 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       }
     });
 
-    // 2. 가벼운 데이터(색상) 먼저 로드
     _loadSavedColors();
+    _loadInitialVolume();
 
-    // 3. 🚀 핵심 수정: 화면이 뜬 뒤에 순차적으로 로드
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 최초 실행 시 베타 안내 다이얼로그 표시
-
-      // A. 먼저 뮤직 리스너를 등록 (통신 통로 열기)
-      _listenToMusic();
-
-      // B. 무거운 이미지 데이터 호출은 조금 더 뒤로 미룸 (검은 화면 방지)
-      // 500ms -> 1000ms로 늘려 UI가 완전히 안착할 시간을 줍니다.
-      Future.delayed(const Duration(milliseconds: 2000), () {
-        if (mounted) {
-          _fetchInitialStatus();
-        }
-      });
+    // 기기 볼륨 버튼 실시간 감지 (하드웨어 버튼 → _volumeNotifier 즉시 반영)
+    _volumeChannel.receiveBroadcastStream().listen((dynamic value) {
+      if (mounted && value != null) {
+        _volumeNotifier.value =
+            (value as num).toDouble().clamp(0.0, 1.0);
+      }
     });
 
-    /*_setLowRefreshRate();*/
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _listenToMusic();
+      Future.delayed(const Duration(milliseconds: 2000), () {
+        if (mounted) _fetchInitialStatus();
+      });
+    });
   }
 
-  void _startAccessGuardian() {
-    // 기존 타이머가 있다면 취소하여 중복 실행 방지
+  // ──────────────────────────────────────────────────────────────────────
+  // dispose
+  // ──────────────────────────────────────────────────────────────────────
+  @override
+  void dispose() {
     _accessCheckTimer?.cancel();
+    _clockTapTimer?.cancel();
+    _portraitClockTapTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
+    _lpController.dispose();
+    _needleController.dispose();
+    _positionNotifier.dispose();
+    _volumeNotifier.dispose();
+    super.dispose();
+  }
 
-    _accessCheckTimer = Timer.periodic(const Duration(seconds: 2), (
-      timer,
-    ) async {
-      // 1. 이미 다이얼로그가 떠 있거나, 편집 모드, 혹은 PiP 모드일 때는 체크 건너뜀
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _durationRetryCount = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _fetchInitialStatus();
+        });
+        // 가사 패널이 열려있으면 포지션도 즉시 동기화
+        if (_landscapeShowLyrics || _portraitShowLyrics) {
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) _syncLyricsPosition();
+          });
+        }
+      });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 접근 가드 (광고/패스)
+  // ──────────────────────────────────────────────────────────────────────
+  void _startAccessGuardian() {
+    _accessCheckTimer?.cancel();
+    _accessCheckTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
       if (_isPassDialogShowing || isEditMode || _isPipMode) return;
-
-      // 2. 권한 체크 (initInstallTime은 main에서 한 번만 호출되므로 여기선 생략)
-      bool hasAccess = await AdService.isFullAccess();
-
-      // 3. 권한이 만료되었을 때만 팝업 실행
-      if (!hasAccess && mounted) {
+      if (!await AdService.isFullAccess() && mounted) {
         _isPassDialogShowing = true;
-
-        // 광고 팝업 실행
         showPassDialog(context, () {
           if (mounted) {
-            setState(() {
-              _isPassDialogShowing = false;
-            });
-            // 권한 획득 후 즉시 상태 갱신 (선택사항)
+            setState(() => _isPassDialogShowing = false);
             _fetchInitialStatus();
           }
         });
@@ -285,6 +250,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // 재생 토글
+  // ──────────────────────────────────────────────────────────────────────
   void _handleInternalToggle() {
     PlayerLogic.togglePlay(
       isPlaying: _isPlaying,
@@ -306,31 +274,36 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     );
   }
 
-  LyricStatus _currentStatus = LyricStatus.loading;
-  String _lastFetchedSongId = "";
-  int _lastRequestToken = 0;
+  // ──────────────────────────────────────────────────────────────────────
+  // 탐색
+  // ──────────────────────────────────────────────────────────────────────
+  void _handleSeek(Duration targetTime) {
+    audioHandler.seek(targetTime);
+    _positionNotifier.value = targetTime;
+    if (_lyrics.isNotEmpty) {
+      int idx = _lyrics.lastIndexWhere((l) => l.time <= targetTime);
+      if (idx != -1)
+        debugPrint("🎯 탐색 동기화: $idx (${targetTime.inMilliseconds}ms)");
+    }
+  }
 
-  // 🚀 duration 재시도 횟수 제한 — 무한 재귀로 IME 충돌 반복 방지
-  int _durationRetryCount = 0;
-  static const int _maxDurationRetry = 3;
-
+  // ──────────────────────────────────────────────────────────────────────
+  // 가사
+  // ──────────────────────────────────────────────────────────────────────
   Future<void> _updateLyrics(dynamic item) async {
     _positionNotifier.value = Duration.zero;
+    final int token = ++_lastRequestToken;
 
-    // 1. 새로운 요청 토큰 생성
-    final int currentToken = ++_lastRequestToken;
-
-    String title = (item is Map)
+    String title = item is Map
         ? (item['title'] ?? "Unknown")
         : (item.title ?? "Unknown");
-    String artist = (item is Map)
+    String artist = item is Map
         ? (item['artist'] ?? "Unknown")
         : (item.artist ?? "Unknown");
-    final String currentId = "${title}_$artist";
+    final String id = "${title}_$artist";
 
-    // 중복 요청 방지 (ID와 데이터가 모두 동일할 때만 리턴)
-    if (_lastFetchedSongId == currentId && _lyrics.isNotEmpty) return;
-    _lastFetchedSongId = currentId;
+    if (_lastFetchedSongId == id && _lyrics.isNotEmpty) return;
+    _lastFetchedSongId = id;
 
     if (mounted) {
       setState(() {
@@ -339,56 +312,41 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       });
     }
 
-    // 사용자가 곡을 빠르게 넘길 때(Debounce)를 위한 대기
     await Future.delayed(const Duration(milliseconds: 500));
-    if (currentToken != _lastRequestToken) return;
+    if (token != _lastRequestToken) return;
 
     try {
-      // 🚀 LyricsService 실행 (내부에서 1차~5차 시도 수행)
       final result = await LyricsService.getLyrics(title, artist);
-
-      // [검증] 응답이 왔을 때 내 토큰이 최신인가?
-      if (mounted && currentToken == _lastRequestToken) {
+      if (mounted && token == _lastRequestToken) {
         setState(() {
           _lyrics = result.lyrics;
           _currentStatus = result.status;
         });
-        debugPrint("✅ 가사 최종 반영: $title (Token: $currentToken)");
       }
     } catch (e) {
-      // 🚨 [가장 중요한 부분]
-      // LyricsService가 내부 재시도 중 에러를 던지더라도,
-      // 이미 가사가 들어온 상태(성공)라면 UI를 '네트워크 에러'로 덮어쓰지 않습니다.
-      if (mounted && currentToken == _lastRequestToken) {
-        if (_lyrics.isEmpty) {
-          debugPrint("🚨 가사 로드 실패(최종): $e");
-          setState(() {
-            _currentStatus = (e is TimeoutException)
-                ? LyricStatus.timeout
-                : LyricStatus.networkError;
-          });
-        } else {
-          debugPrint("💡 무시된 지연 에러: 이미 가사가 로드됨 ($title)");
-        }
+      if (mounted && token == _lastRequestToken && _lyrics.isEmpty) {
+        setState(() {
+          _currentStatus = (e is TimeoutException)
+              ? LyricStatus.timeout
+              : LyricStatus.networkError;
+        });
       }
     }
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // 수동 새로고침 (LP 롱프레스)
+  // ──────────────────────────────────────────────────────────────────────
   void _handleManualRefresh() async {
     final now = DateTime.now();
-
     if (_lastSyncTime != null &&
         now.difference(_lastSyncTime!) < const Duration(seconds: 10)) {
       await HapticFeedback.selectionClick();
-
       return;
     }
-
     _lastSyncTime = now;
     await HapticFeedback.heavyImpact();
-
     permissionGuardKey.currentState?.showTopStatusAlarm(isSyncing: true);
-
     try {
       await audioHandler.refreshMetadata();
       await _fetchInitialStatus();
@@ -398,234 +356,125 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     }
   }
 
-  @override
-  void dispose() {
-    _accessCheckTimer?.cancel();
-    // 🚀 관찰자를 반드시 해제해야 메모리 누수가 없습니다.
-    WidgetsBinding.instance.removeObserver(this);
-    WakelockPlus.disable();
-    _lpController.dispose();
-    _needleController.dispose();
-    _positionNotifier.dispose();
-    super.dispose();
+  // ──────────────────────────────────────────────────────────────────────
+  // 볼륨 로드
+  // ──────────────────────────────────────────────────────────────────────
+  Future<void> _loadInitialVolume() async {
+    final v = await PlayerLogic.getVolume();
+    if (mounted) _volumeNotifier.value = v;
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // 색상 로드 / 변경
+  // ──────────────────────────────────────────────────────────────────────
   Future<void> _loadSavedColors() async {
-    final savedColors = await ColorManager.loadSettings();
+    final saved = await ColorManager.loadSettings();
     setState(() {
-      _bgColor = savedColors['bg']!;
-      _lpColor = savedColors['lp']!;
-      _textColor = savedColors['text']!;
-      _artistColor = savedColors['artist']!;
-      _barColor = savedColors['bar']!;
-      _playBtnColor = savedColors['btn']!;
+      _bgColor = saved['bg']!;
+      _lpColor = saved['lp']!;
+      _textColor = saved['text']!;
+      _artistColor = saved['artist']!;
+      _barColor = saved['bar']!;
+      _playBtnColor = saved['btn']!;
     });
   }
-
-  /*Future<void> _setLowRefreshRate() async {
-    try {
-      // 주사율 제어 패키지 임포트가 필요합니다: import 'package:flutter_displaymode/flutter_displaymode.dart';
-      final List<DisplayMode> modes = await FlutterDisplayMode.supported;
-
-      // 60Hz 모드 찾기
-      final DisplayMode lowRefreshMode = modes.firstWhere(
-        (m) => m.refreshRate.round() == 60,
-        orElse: () => DisplayMode.auto,
-      );
-
-      await FlutterDisplayMode.setPreferredMode(lowRefreshMode);
-      debugPrint("✅ 앱 전체 주사율 60Hz 고정 완료");
-    } catch (e) {
-      debugPrint("⚠️ 주사율 설정 실패 (지원하지 않는 기기일 수 있음): $e");
-    }
-  }*/
 
   void _handleColorChange(Color newColor, String target) {
     setState(() {
-      // UI 업데이트 로직만 남김
       switch (target) {
-        case 'bg':
-          _bgColor = newColor;
-          break;
-        case 'lp':
-          _lpColor = newColor;
-          break;
-        case 'text':
-          _textColor = newColor;
-          break;
-        case 'artist':
-          _artistColor = newColor;
-          break;
-        case 'bar':
-          _barColor = newColor;
-          break;
-        case 'btn':
-          _playBtnColor = newColor;
-          break;
+        case 'bg': _bgColor = newColor; break;
+        case 'lp': _lpColor = newColor; break;
+        case 'text': _textColor = newColor; break;
+        case 'artist': _artistColor = newColor; break;
+        case 'bar': _barColor = newColor; break;
+        case 'btn': _playBtnColor = newColor; break;
       }
     });
-    PlayerLogic.updateColor(target, newColor); // 저장 로직은 외부로
+    PlayerLogic.updateColor(target, newColor);
   }
 
+  Future<void> _handleAbsoluteColorReset() async {
+    final c = await PlayerLogic.handleAbsoluteColorReset();
+    setState(() {
+      _bgColor = c['bg']!;
+      _lpColor = c['lp']!;
+      _textColor = c['text']!;
+      _artistColor = c['artist']!;
+      _barColor = c['bar']!;
+      _playBtnColor = c['btn']!;
+    });
+  }
+
+  void _handleResetLayout() async {
+    await PlayerLogic.resetLayout();
+    if (!mounted) return;
+    setState(() {
+      final size = MediaQuery.of(context).size;
+      _portraitConfig = LayoutEngine.calculate(size, Orientation.portrait, false);
+      _landscapeConfig = LayoutEngine.calculate(size, Orientation.landscape, false);
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 음악 리스너
+  // ──────────────────────────────────────────────────────────────────────
   void _listenToMusic() async {
     bool isGranted = await NotificationListenerService.isPermissionGranted();
     if (!isGranted) return;
 
     NotificationListenerService.notificationsStream.listen((event) async {
       if (event.hasRemoved == true || event.title == null) return;
+      if (!MusicColorLogic.isMusicApp(event.packageName ?? "")) return;
+      if (_currentTitle == event.title || !mounted) return;
 
-      if (MusicColorLogic.isMusicApp(event.packageName ?? "")) {
-        // 제목이 같고 아티스트가 유효하면 불필요한 리빌드 방지
-        if (_currentTitle == event.title) {
-          return;
-        }
-
-        if (!mounted) return;
-
-        _positionNotifier.value = Duration.zero;
-
-        // 1. [즉시 업데이트] 이미지와 텍스트부터 먼저 바꿉니다 (callback 제거)
-        setState(() {
-          _currentTitle = event.title!;
-          _currentArtist = (event.content ?? "Unknown").toUpperCase();
-          _lyrics = [];
-          _lastFetchedSongId = "";
-          _isPlaying = true;
-          _currentStatus = LyricStatus.loading;
-        });
-
-        await _fetchInitialStatus();
-
-        _updateLyrics({'title': event.title, 'artist': event.content});
-
-        if (mounted) {
-          setState(() {
-            _isPlaying = true;
-          });
-        }
-
-        // 2. [비동기 업데이트] 색상 추출은 백그라운드에서 천천히 수행
-        if (_albumArtBytes != null) {
-          MusicColorLogic.extractThemeColors(_albumArtBytes!).then((colors) {
-            if (mounted && colors != null) {
-              setState(() {
-                _bgColor = colors['bg']!;
-                _playBtnColor = colors['btn']!;
-                _barColor = colors['bar']!;
-                _textColor = colors['text']!;
-                _artistColor = colors['artist']!;
-              });
-            }
-          });
-        }
-
-        _lpController.repeat();
-        _needleController.forward();
-      }
-    });
-
-    const EventChannel(
-      'com.glasnyl.app/media_status',
-    ).receiveBroadcastStream().listen((status) {
-      if (status is Map && status['position'] != null) {
-        final int incomingPos = status['position'];
-
-        // 현재 값과 200ms 이상 차이날 때만 업데이트 (UI 스레드 부하 감소)
-        final diff = (incomingPos - _positionNotifier.value.inMilliseconds)
-            .abs();
-        if (diff > 200) {
-          _positionNotifier.value = Duration(milliseconds: incomingPos);
-        }
-      }
-    });
-  }
-
-  // 미디어 상태 업데이트 로직도 별도 함수로 빼면 더 깨끗합니다.
-  void _handleMediaStatusUpdate(dynamic data) {
-    if (data == null || !mounted) return;
-
-    if (data is Map && data['position'] != null) {
-      // 🚀 핵심 수정: 시스템이 주는 시간을 무조건 믿지 않습니다.
-      int incomingPos = data['position'];
-
-      if (_positionNotifier.value.inMilliseconds == 0 && incomingPos > 2000) {
-        debugPrint("🚫 이전 곡의 잔상 시간($incomingPos) 무시함");
-        return;
-      }
-
-      if (incomingPos < 500) {
-        // 곡 초반(1초 미만) 신호는 곡이 바뀌었거나 되돌린 것이므로 즉시 리셋
-        _positionNotifier.value = Duration(milliseconds: incomingPos);
-      } else if (_isPlaying && incomingPos <= 0) {
-        // 재생 중인데 갑자기 0이 들어오는 케이스만 무시
-        debugPrint("🚫 재생 중 튀는 신호 차단");
-      } else {
-        final diff = (incomingPos - _positionNotifier.value.inMilliseconds)
-            .abs();
-        if (diff > 200) {
-          _positionNotifier.value = Duration(milliseconds: incomingPos);
-        }
-      }
-    }
-
-    bool incomingPlayingState = _isPlaying;
-
-    try {
-      if (data is Map) {
-        incomingPlayingState = data['isPlaying'] ?? false;
-      } else if (data is String) {
-        incomingPlayingState = (data == 'playing');
-      } else if (data is bool) {
-        incomingPlayingState = data;
-      }
-    } catch (e) {
-      debugPrint("Media status parsing error: $e");
-    }
-
-    // 상태가 변했을 때만 처리
-    if (_isPlaying != incomingPlayingState) {
+      _positionNotifier.value = Duration.zero;
       setState(() {
-        _isPlaying = incomingPlayingState;
+        _currentTitle = event.title!;
+        _currentArtist = (event.content ?? "Unknown").toUpperCase();
+        _lyrics = [];
+        _lastFetchedSongId = "";
+        _isPlaying = true;
+        _currentStatus = LyricStatus.loading;
       });
 
-      if (_isPlaying) {
-        // [재생 시작]
-        if (!_lpController.isAnimating) _lpController.repeat();
-        _needleController.forward(); // 바늘 내리기 (0.0 -> 1.0)
-        HapticFeedback.lightImpact();
-      } else {
-        // [정지 발생] 🚀 이 부분이 바늘 동작의 핵심입니다.
+      await _fetchInitialStatus();
+      _updateLyrics({'title': event.title, 'artist': event.content});
+      if (mounted) setState(() => _isPlaying = true);
 
-        // 1. 바늘 먼저 즉시 올리기
-        _needleController.reverse(); // 바늘 올리기 (1.0 -> 0.0)
-
-        // 2. 바늘이 완전히 올라가는 시간(약 500ms) 동안은 LP가 도는 게 자연스러움
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted && !_isPlaying) {
-            _lpController.stop(); // LP 정지
+      if (_albumArtBytes != null) {
+        MusicColorLogic.extractThemeColors(_albumArtBytes!).then((colors) {
+          if (mounted && colors != null) {
+            setState(() {
+              _bgColor = colors['bg']!;
+              _playBtnColor = colors['btn']!;
+              _barColor = colors['bar']!;
+              _textColor = colors['text']!;
+              _artistColor = colors['artist']!;
+            });
           }
         });
-        HapticFeedback.mediumImpact();
       }
-    }
+
+      _lpController.repeat();
+      _needleController.forward();
+    });
+
+    const EventChannel('com.glasnyl.app/media_status')
+        .receiveBroadcastStream()
+        .listen((status) {
+      if (status is Map && status['position'] != null) {
+        final int pos = status['position'];
+        final diff = (pos - _positionNotifier.value.inMilliseconds).abs();
+        if (diff > 200) {
+          _positionNotifier.value = Duration(milliseconds: pos);
+        }
+      }
+    });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // 🚀 Surface 재구성 + IME Input Channel 안정화 대기
-      // resumed 즉시 호출 시 Android Surface 재구성 도중 MethodChannel이 끼어들어
-      // IME Input Channel 충돌 발생. postFrameCallback + 500ms 2단계 대기.
-      _durationRetryCount = 0; // 복귀 시 재시도 카운터 리셋
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) _fetchInitialStatus();
-        });
-      });
-    }
-  }
-
-
+  // ──────────────────────────────────────────────────────────────────────
+  // 초기 상태 가져오기
+  // ──────────────────────────────────────────────────────────────────────
   Future<void> _fetchInitialStatus() async {
     try {
       const platform = MethodChannel('com.glasnyl.app/media_control');
@@ -635,63 +484,41 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         final data = Map<String, dynamic>.from(result);
         final Uint8List? artData = data['albumArt'] as Uint8List?;
 
-        // 🚀 [개선 1] 재귀 호출 대신 가벼운 텍스트 먼저 렌더링
-        // 앨범 아트가 없어도 제목/가수 정보는 먼저 띄워야 검은 화면을 탈출합니다.
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
           _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
           _isPlaying = data['isPlaying'] ?? false;
 
-          // 🚀 [수정] 전체 길이 동기화 로직 강화 + 재시도 횟수 제한
           if (data['duration'] != null) {
             final int durMs = (data['duration'] as num).toInt();
-
             if (durMs > 0) {
               _totalDuration = Duration(milliseconds: durMs);
-              _durationRetryCount = 0; // 성공 시 카운터 리셋
-              debugPrint("⏳ 전체 길이 동기화 완료: $_totalDuration");
+              _durationRetryCount = 0;
             } else if (_durationRetryCount < _maxDurationRetry) {
-              // 🚀 최대 3회만 재시도 — 무한 재귀로 IME 채널과 충돌하는 것 방지
               _durationRetryCount++;
-              debugPrint("⚠️ 전체 길이 0, 재시도 $_durationRetryCount/$_maxDurationRetry");
               Future.delayed(const Duration(seconds: 1), () {
                 if (mounted) _fetchInitialStatus();
               });
             } else {
-              debugPrint("⚠️ 전체 길이 재시도 한도 초과, 포기합니다.");
               _durationRetryCount = 0;
             }
           }
         });
 
-        // 🚀 [개선 2] 애니메이션 실행 시점을 최적화
         if (_isPlaying) {
           if (!_lpController.isAnimating) _lpController.repeat();
-          // value = 1.0; 대신 아래처럼 쓰면 슥~ 내려갑니다.
-          _needleController.animateTo(
-            1.0,
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.easeOut,
-          );
+          _needleController.animateTo(1.0,
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeOut);
         } else {
           _lpController.stop();
-          // 즉시 0.0으로 두지 않고 슥~ 올라가게 합니다.
-          _needleController.animateTo(
-            0.0,
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.easeOut,
-          );
+          _needleController.animateTo(0.0,
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeOut);
         }
 
-        // 🚀 [개선 3] 무거운 데이터(이미지 및 색상 추출)는 비동기로 처리
         if (artData != null && artData.isNotEmpty) {
-          // 이미지 저장 (이 작업도 setState를 한 번 더 타서 화면을 갱신합니다)
-          setState(() {
-            _albumArtBytes = artData;
-          });
-
-          // 🚀 [개선 4] 색상 추출은 Isolate나 아주 약간의 딜레이를 주어 UI 스레드를 방어
-          // 앱이 켜지자마자 계산하면 렉이 걸리므로 300ms 정도 뒤에 여유롭게 수행
+          setState(() => _albumArtBytes = artData);
           Future.delayed(const Duration(milliseconds: 600), () {
             if (mounted && artData.length > 500) {
               MusicColorLogic.extractThemeColors(artData).then((colors) {
@@ -707,9 +534,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
               });
             }
           });
-        } else {
-          // 아예 데이터가 없는 경우에만 한 번만 더 시도 (무한 루프 방지)
-          // 여기에 재시도 횟수 제한 변수를 두는 것을 추천합니다.
         }
       }
     } catch (e) {
@@ -718,91 +542,53 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _updateLyrics({'title': _currentTitle, 'artist': _currentArtist});
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final bool isFlipCover = size.width > size.height && size.width < 600;
-
     return OrientationBuilder(
       builder: (context, orientation) {
+        // ★ size를 OrientationBuilder 안에서 읽어야 방향 전환 시 정확한 값을 얻음
+        // 가로로 시작한 뒤 세로로 돌릴 때 바깥에서 읽으면 이전 방향의 size가 남음
+        final size = MediaQuery.of(context).size;
+        final bool isFlipCover = size.width > size.height && size.width < 600;
         final bool isSpecialMode = _isPipMode || isFlipCover;
-        final isPortrait = orientation == Orientation.portrait;
-
+        final bool isPortrait = orientation == Orientation.portrait;
         final config = LayoutEngine.calculate(size, orientation, isSpecialMode);
-
-        final bool isLandscape =
-            orientation == Orientation.landscape && !_isPipMode;
-
-        // 3. 기존 세로 모드용 계산식
-        final double leftPadding = size.width * 0.08;
-        final double safeLeftDx = (size.width * 0.85 / 2) + leftPadding;
-
-        // 4. 상황별 좌표 결정
-        double finalContentDx;
-        if (isSpecialMode) {
-          finalContentDx = config.titlePos.dx; // PiP 모드용 좌표 (LayoutEngine 설정값)
-        } else if (isPortrait) {
-          finalContentDx = safeLeftDx; // 세로 모드 고정 위치
-        } else {
-          finalContentDx = config.titlePos.dx; // 일반 가로 모드 좌표
-        }
-
-        // 5. 상황별 너비 결정
-        double finalContentWidth;
-        if (isSpecialMode) {
-          finalContentWidth = size.width * 0.6; // PiP: 좁은 너비
-        } else if (isPortrait) {
-          finalContentWidth = size.width * 0.85; // 세로: 넓은 너비
-        } else {
-          finalContentWidth = config.progressBarWidth; // 가로 모드 전용 너비
-        }
 
         return Scaffold(
           backgroundColor: Colors.transparent,
-
           extendBody: true,
           extendBodyBehindAppBar: true,
-
           body: AnimatedContainer(
             duration: const Duration(milliseconds: 600),
             curve: Curves.easeInOut,
+            // bgColor는 앨범 아트 추출 색상이 깔리지만
+            // 배경 이미지가 있으면 이미지가 실질적으로 보임
             color: _bgColor,
             child: Stack(
               children: [
+                // ── ① 배경: 앨범 아트 전체 화면 ──────────────────────
                 if (_albumArtBytes != null)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: RepaintBoundary(
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 600),
-                          // 🚀 핵심: AnimatedSwitcher의 자식이 전체를 채우도록 설정
-                          layoutBuilder:
-                              (
-                                Widget? currentChild,
-                                List<Widget> previousChildren,
-                              ) {
-                                return Stack(
-                                  children: [
-                                    ...previousChildren,
-                                    if (currentChild != null) currentChild,
-                                  ],
-                                );
-                              },
+                          layoutBuilder: (child, prev) =>
+                              Stack(children: [...prev, if (child != null) child]),
                           child: SizedBox.expand(
-                            // 🚀 이미지가 화면 전체로 늘어나도록 강제
                             key: ValueKey(
-                              '${_currentTitle}_${_albumArtBytes.hashCode}',
-                            ),
+                                '${_currentTitle}_${_albumArtBytes.hashCode}'),
                             child: Image.memory(
                               _albumArtBytes!,
-                              fit: BoxFit.cover, // 이제 이 설정이 화면 전체에 먹힙니다.
+                              fit: BoxFit.cover,
                               gaplessPlayback: true,
-                              cacheWidth: 300, // 너무 작으면 화질이 깨지니 600 정도로 상향
-                              cacheHeight: 600, // 세로형 폰에 맞게 조절
+                              cacheWidth: 300,
+                              cacheHeight: 600,
                               filterQuality: FilterQuality.low,
-                              opacity: const AlwaysStoppedAnimation(
-                                0.8,
-                              ), // 0.2보다 훨씬 선명하게
+                              opacity: const AlwaysStoppedAnimation(0.9),
                             ),
                           ),
                         ),
@@ -810,42 +596,31 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     ),
                   ),
 
-                // 블러 레이어 (이 부분은 동일하되, sigma 수치만 확인하세요)
-                // 배경을 흐리게 만들고 가독성을 높이는 필터 레이어
+                // ── ② 블러 + 그라데이션 오버레이 ──────────────────────
                 Positioned.fill(
                   child: IgnorePointer(
                     child: RepaintBoundary(
                       child: Stack(
                         children: [
-                          // [1] 블러 레이어: 배경 이미지의 색감만 남깁니다.
                           BackdropFilter(
-                            filter: ImageFilter.blur(
-                              sigmaX: 15,
-                              sigmaY: 15,
-                            ), // 🚀 블러를 살짝 높여 몽환적으로
+                            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 600),
-                              // 배경색을 덮되, 투명도를 조절해 앨범 아트의 생동감을 살립니다.
-                              color: _bgColor.withValues(alpha: 0.4),
+                              color: _bgColor.withValues(alpha: 0.30),
                             ),
                           ),
-
-                          // [2] 소프트 레이어 (가장 중요): 글래스모피즘의 핵심 '어둠의 계층'
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 600),
+                          // 상단은 밝게, 하단은 어둡게 → 텍스트 가독성
+                          Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  // 상단: 상단 바 아이콘들을 위해 아주 살짝만 어둡게
-                                  Colors.black.withValues(alpha: 0.2),
-                                  // 중간: 앨범 아트의 색이 가장 잘 투영되는 지점
-                                  Colors.black.withValues(alpha: 0.1),
-                                  // 하단: 🚀 텍스트 가독성을 위해 묵직하게 블랙 그라데이션
-                                  Colors.black.withValues(alpha: 0.7),
+                                  Colors.black.withValues(alpha: 0.10),
+                                  Colors.black.withValues(alpha: 0.02),
+                                  Colors.black.withValues(alpha: 0.50),
                                 ],
-                                stops: const [0.0, 0.4, 1.0],
+                                stops: const [0.0, 0.40, 1.0],
                               ),
                             ),
                           ),
@@ -855,271 +630,21 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   ),
                 ),
 
-                // [1] 메인 콘텐츠 레이어
-                Positioned.fill(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // --- LP판 & 앨범 표지 (이 부분만 전환됨) ---
-                      // --- LP판 & 앨범 표지 전환 ---
-                      // --- LP판 & 앨범 표지 전환부 ---
-                      _buildEdit(
-                        Offset(
-                          (_isMinimalMode || _showLyrics)
-                              ? (isPortrait
-                                    ? size.width / 2
-                                    : size.width * 0.25)
-                              : config.lpPos.dx,
-                          config.lpPos.dy,
-                        ),
-                        config.lpSize,
-                        config.lpSize,
-                        (d) => config.lpPos += d,
-                        (s) => config.lpSize = (config.lpSize + s).clamp(
-                          150.0,
-                          600.0,
-                        ),
+                // ── ③ 메인 콘텐츠 ──────────────────────────────────────
+                // 세로 일반 모드: 전체화면 통합 레이아웃
+                // 가로 일반 모드: 새 Row 기반 가로 레이아웃
+                // PiP / 플립커버: 기존 자유 배치 레이아웃
+                if (isPortrait && !isSpecialMode)
+                  _buildPortraitFullLayout(size, config)
+                else if (!isPortrait && !isSpecialMode)
+                  _buildLandscapeFullLayout(size, config)
+                else
+                  _buildLegacyLayout(size, config, isPortrait, isSpecialMode),
 
-                        // 외부 파일로 뺀 위젯 호출
-                        RepaintBoundary(
-                          child: GestureDetector(
-                            onLongPress: _handleManualRefresh,
-                            child: ValueListenableBuilder<Duration>(
-                              valueListenable: _positionNotifier,
-                              builder: (context, realTimePos, child) {
-                                return ClassicVinylView(
-                                  // 1. ValueKey를 제거하거나 고정 키를 사용하세요. (리빌드 최적화)
-                                  // key: ValueKey('classic_vinyl'),
-                                  lyricStatus: _currentStatus,
-                                  lyrics: _lyrics,
-                                  currentPosition: realTimePos,
-                                  isMinimalMode: _isMinimalMode,
-                                  isLyricsMode: _showLyrics,
-                                  size: config.lpSize,
-                                  albumArtBytes: _albumArtBytes,
-                                  title: _currentTitle,
-                                  artist: _currentArtist,
-                                  lpController: _lpController,
-                                  isPlaying: _isPlaying,
-
-                                  onToggleMode: () => setState(
-                                    () => _isMinimalMode = !_isMinimalMode,
-                                  ),
-
-                                  onShowLyrics: () {
-                                    // 1. UI 전환을 최우선 실행 (가사창 먼저 보여주기)
-                                    setState(() => _showLyrics = true);
-
-                                    // 2. 가사 데이터 및 시간 동기화
-                                    Future(() async {
-                                      // 가사가 없으면 로딩
-                                      if (_lyrics.isEmpty &&
-                                          _currentStatus !=
-                                              LyricStatus.loading) {
-                                        await _updateLyrics({
-                                          'title': _currentTitle,
-                                          'artist': _currentArtist,
-                                        });
-                                      }
-
-                                      try {
-                                        const platform = MethodChannel(
-                                          'com.glasnyl.app/media_control',
-                                        );
-                                        final dynamic result = await platform
-                                            .invokeMethod('getCurrentStatus');
-
-                                        if (result != null &&
-                                            result['position'] != null) {
-                                          // 🚀 안전한 타입 변환: 어떤 숫자 형태든 대응
-                                          final int posMs =
-                                              (result['position'] as num)
-                                                  .toInt();
-
-                                          // 🚀 즉시 갱신하여 가사 위젯이 현재 위치를 바로 잡게 함
-                                          _positionNotifier.value = Duration(
-                                            milliseconds: posMs,
-                                          );
-
-                                          debugPrint("🎯 동기화 완료: ${posMs}ms");
-                                        }
-                                      } catch (e) {
-                                        debugPrint("⚠️ 시계 동기화 실패: $e");
-                                      }
-                                    });
-                                  },
-
-                                  onCloseLyrics: () =>
-                                      setState(() => _showLyrics = false),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // --- 바늘 (LP 모드일 때만 표시) ---
-                      if (!_isMinimalMode && !_showLyrics)
-                        _buildEdit(
-                          config.needlePos,
-                          160,
-                          config.needleSize * 2.0,
-                          (d) => config.needlePos += d,
-                          (s) => config.needleSize = (config.needleSize + s)
-                              .clamp(100.0, 400.0),
-                          // 🚀 최적화 핵심: RepaintBoundary가 바늘의 움직임을 별도 레이어로 분리합니다.
-                          RepaintBoundary(
-                            child: AnimatedBuilder(
-                              animation: _needleController,
-                              builder: (context, child) {
-                                return NeedleWidget(
-                                  controller: _needleController,
-                                  needleSize: config.needleSize,
-                                  bgColor: _bgColor,
-                                  accentColor: _playBtnColor,
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-
-                      // --- 제목 (유지) ---
-                      _buildEdit(
-                        Offset(finalContentDx, config.titlePos.dy),
-                        finalContentWidth,
-                        config.titleSize * 1.5,
-                        (d) => config.titlePos += d,
-                        (s) => config.titleSize = (config.titleSize + s * 0.1)
-                            .clamp(20.0, 80.0),
-                        // ClipRect로 감싸서 넘치는 텍스트를 물리적으로 차단합니다.
-                        ClipRect(
-                          child: SizedBox(
-                            // finalContentWidth가 0 이하일 경우 에러 방지
-                            width: finalContentWidth > 0
-                                ? finalContentWidth
-                                : 200,
-                            child: Align(
-                              // 세로: 왼쪽 정렬, 가로: 중앙 정렬
-                              alignment: isPortrait
-                                  ? Alignment.centerLeft
-                                  : Alignment.center,
-                              child: MarqueeTitleWidget(
-                                key: Key(_currentTitle), // 타이틀 변경 시 위젯 초기화
-                                title: _currentTitle,
-                                fontSize: config.titleSize * 1.1,
-                                textColor: _textColor,
-                                width: finalContentWidth,
-                                isPip: _isPipMode,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // --- 가수 (유지) ---
-                      _buildEdit(
-                        Offset(finalContentDx, config.artistPos.dy),
-                        finalContentWidth,
-                        40,
-                        (d) => config.artistPos += d,
-                        (s) => config.artistSize = (config.artistSize + s * 0.1)
-                            .clamp(10.0, 40.0),
-                        Align(
-                          // 제목과 동일하게 정렬 방향 수정
-                          alignment: isPortrait
-                              ? Alignment.centerLeft
-                              : Alignment.center,
-                          child: ArtistTextWidget(
-                            artist: _currentArtist,
-                            fontSize: config.artistSize,
-                            color: _artistColor.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ),
-
-                      // --- 프로그레스 바 (유지 및 에러 해결) ---
-                      _buildEdit(
-                        config.progressBarPos,
-                        config.progressBarWidth,
-                        40,
-                        (d) => config.progressBarPos += d,
-                        (s) => config.progressBarWidth =
-                            (config.progressBarWidth + s).clamp(
-                              100.0,
-                              size.width,
-                            ),
-                        _buildProgressBarStream(config.progressBarWidth),
-                      ),
-
-                      // --- 재생 버튼 (유지) ---
-                      // --- 1. 이전 곡 버튼 ---
-                      _buildEdit(
-                        config
-                            .prevButtonPos, // config에 개별 위치 변수가 있다고 가정 (없으면 생성 필요)
-                        60, // 버튼 크기에 맞춘 너비
-                        60, // 버튼 크기에 맞춘 높이
-                        (d) => config.prevButtonPos += d,
-                        (s) => {}, // 개별 버튼은 크기 조절 제외하거나 필요시 추가
-                        PlayButtonsWidget.buildSideBtn(
-                          icon: Icons.skip_previous_rounded,
-                          onTap: PlayerLogic.skipPrevious,
-                        ),
-                      ),
-
-                      // --- 2. 재생/일시정지 버튼 (메인) ---
-                      _buildEdit(
-                        config.playButtonsPos,
-                        90, // 메인 버튼 크기
-                        90,
-                        (d) => config.playButtonsPos += d,
-                        (s) => {},
-                        PlayButtonsWidget.buildMainPlayBtn(
-                          isPlaying: _isPlaying,
-                          activeColor: _barColor,
-                          onTap: () {
-                            PlayerLogic.togglePlay(
-                              isPlaying: _isPlaying,
-                              onToggle: () {
-                                if (mounted) {
-                                  setState(() {
-                                    _isPlaying = !_isPlaying;
-                                    if (_isPlaying) {
-                                      _lpController.repeat();
-                                      _needleController.forward();
-                                    } else {
-                                      _lpController.stop();
-                                      _needleController.reverse();
-                                    }
-                                  });
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-
-                      // --- 3. 다음 곡 버튼 ---
-                      _buildEdit(
-                        config.nextButtonPos, // config에 개별 위치 변수가 있다고 가정
-                        60,
-                        60,
-                        (d) => config.nextButtonPos += d,
-                        (s) => {},
-                        PlayButtonsWidget.buildSideBtn(
-                          icon: Icons.skip_next_rounded,
-                          onTap: PlayerLogic.skipNext,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // [2] 상단 앱바 레이어
+                // ── ④ 상단 앱바 ────────────────────────────────────────
                 if (!_isPipMode)
                   Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
+                    top: 0, left: 0, right: 0,
                     child: RepaintBoundary(
                       child: SafeArea(
                         child: PlayerAppBar(
@@ -1127,10 +652,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           isPip: _isPipMode,
                           orientation: orientation,
                           textColor: _textColor,
-                          bgColor: _bgColor, // 메뉴 배경색
+                          bgColor: _bgColor,
                           isEditMode: isEditMode,
                           onResetLayout: _handleResetLayout,
-                          // 아래 항목들을 추가로 넘겨줘야 내부에서 메뉴가 작동합니다.
                           lpColor: _lpColor,
                           artistColor: _artistColor,
                           barColor: _barColor,
@@ -1139,16 +663,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           onResetColors: _handleAbsoluteColorReset,
                           onEditModeChanged: (v) =>
                               setState(() => isEditMode = v),
-                          onLockToggle: () {
-                            setState(() {
-                              _isScreenLocked = true;
-                            });
-                          },
+                          onLockToggle: () =>
+                              setState(() => _isScreenLocked = true),
                         ),
                       ),
                     ),
                   ),
 
+                // ── ⑤ 화면 잠금 ────────────────────────────────────────
                 if (_isScreenLocked)
                   Positioned.fill(
                     child: ScreenLockOverlay(
@@ -1163,58 +685,1644 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     );
   }
 
-  // 2. 프로그레스 바 스트림 빌더 (하나만 남기기)
-  // 2. 프로그레스 바 스트림 빌더
-  Widget _buildProgressBarStream(double barWidth) {
-    return SizedBox(
-      key: _progressKey,
-      width: barWidth,
-      child: StreamProgressBar(
-        barWidth: barWidth,
-        bgColor: _bgColor,
-        barColor: _barColor,
-        onSeek: (ratio) {
-  // 1. 오디오 탐색
-  PlayerLogic.seekTo(ratio);
+  // ══════════════════════════════════════════════════════════════════════
+  // 가로 모드 전체화면 통합 레이아웃
+  //
+  // [구조]
+  //  ┌────────────────────────────────────────────────────────────┐
+  //  │  AppBar (상단 고정)                                        │
+  //  ├──────────────────────────┬─────────────────────────────────┤
+  //  │                          │  ┌───────────────────────────┐  │
+  //  │    LP 턴테이블 (좌측)    │  │  글래스 패널 (우측)       │  │
+  //  │    화면 좌 ~50%          │  │  · 제목                   │  │
+  //  │                          │  │  · 가수                   │  │
+  //  │                          │  │  · 프로그레스바           │  │
+  //  │                          │  │  · 재생 버튼 (⏮ ⏯ ⏭)   │  │
+  //  │                          │  └───────────────────────────┘  │
+  //  └──────────────────────────┴─────────────────────────────────┘
+  // ══════════════════════════════════════════════════════════════════════
+  Widget _buildLandscapeFullLayout(Size size, PlayerConfig config) {
+    final double topPad = MediaQuery.of(context).padding.top + 56.0;
+    final double botPad = MediaQuery.of(context).padding.bottom + 8.0;
+    final double hPad = size.width * 0.018;
+    final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
 
-  // 2. duration을 _totalDuration 대신 audioHandler에서 직접 읽기 (null 방지)
-  final duration = _totalDuration ?? audioHandler.mediaItem.value?.duration;
-  if (duration != null && duration.inMilliseconds > 0) {
-    final targetPosition = Duration(
-      milliseconds: (duration.inMilliseconds * ratio).toInt(),
-    );
-    _positionNotifier.value = targetPosition; // setState 불필요, ValueNotifier가 자동 rebuild
-    debugPrint("🎯 가사 수동 이동 및 화면 갱신: $targetPosition");
-  }
-},
+    // ── 패널 폭 우선 확보: 화면 폭의 35% ────────────────────────────────
+    final double panelW = size.width * 0.35;
+
+    // LP 폭: 나머지 (최대 65%)
+    final double lpW = (size.width - panelW - hPad * 3).clamp(0.0, double.infinity);
+
+    // LP 높이는 폭의 0.72 — available을 넘으면 높이 기준으로 축소
+    final double turntableSizeByW = lpW;
+    final double turntableSizeByH = available > 0 ? available / 0.72 : lpW;
+    final double turntableSize = (turntableSizeByW < turntableSizeByH
+        ? turntableSizeByW
+        : turntableSizeByH).clamp(0.0, double.infinity);
+
+    // LP 실제 높이
+    final double lpH = turntableSize * 0.72;
+
+    // 볼륨 패널 높이: LP 아래 남는 공간 (음수 방지)
+    final double volumePanelH = (available - lpH).clamp(0.0, double.infinity);
+
+    // ── 우측 패널 폰트/간격: panelW, available 비례로 자동 계산 ──────────
+    final double titleFs   = (panelW * 0.13).clamp(16.0, 36.0);
+    final double artistFs  = (panelW * 0.075).clamp(11.0, 22.0);
+    final double itemGap   = (available * 0.025).clamp(4.0, 18.0);
+    final double bigGap    = (available * 0.045).clamp(8.0, 28.0);
+    final double vPad      = (available * 0.04).clamp(6.0, 20.0);
+    final double hInnerPad = (panelW * 0.07).clamp(10.0, 28.0);
+    final double innerW    = (panelW - hInnerPad * 2).clamp(0.0, double.infinity);
+
+    return Positioned.fill(
+      child: Padding(
+        padding: EdgeInsets.only(top: topPad, bottom: botPad, left: hPad, right: hPad),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            // ── 좌: LP 턴테이블 + 볼륨 패널 (세로로 쌓기) ──────────────
+            // SizedBox + Column 대신 Expanded + Column 으로 변경:
+            // SizedBox(height: available) 안에 Expanded가 있으면
+            // "Vertical viewport was given unbounded height" 에러 발생
+            Expanded(
+              flex: 65,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // LP 뷰
+                  GestureDetector(
+                    onLongPress: _handleManualRefresh,
+                    child: ValueListenableBuilder<Duration>(
+                      valueListenable: _positionNotifier,
+                      builder: (context, realTimePos, _) {
+                        if (_isMinimalMode || _showLyrics) {
+                          return RepaintBoundary(
+                            child: ClassicVinylView(
+                              lyricStatus: _currentStatus,
+                              lyrics: _lyrics,
+                              currentPosition: realTimePos,
+                              isMinimalMode: _isMinimalMode,
+                              isLyricsMode: _showLyrics,
+                              size: turntableSize,
+                              albumArtBytes: _albumArtBytes,
+                              title: _currentTitle,
+                              artist: _currentArtist,
+                              lpController: _lpController,
+                              isPlaying: _isPlaying,
+                              onToggleMode: () =>
+                                  setState(() => _isMinimalMode = !_isMinimalMode),
+                              onShowLyrics: () {
+                                setState(() => _showLyrics = true);
+                                Future(() async {
+                                  if (_lyrics.isEmpty &&
+                                      _currentStatus != LyricStatus.loading) {
+                                    await _updateLyrics({
+                                      'title': _currentTitle,
+                                      'artist': _currentArtist,
+                                    });
+                                  }
+                                  try {
+                                    const p = MethodChannel('com.glasnyl.app/media_control');
+                                    final r = await p.invokeMethod('getCurrentStatus');
+                                    if (r?['position'] != null) {
+                                      _positionNotifier.value = Duration(
+                                          milliseconds: (r['position'] as num).toInt());
+                                    }
+                                  } catch (_) {}
+                                });
+                              },
+                              onCloseLyrics: () =>
+                                  setState(() => _showLyrics = false),
+                            ),
+                          );
+                        }
+
+                        final double progress = (_totalDuration != null &&
+                                _totalDuration!.inMilliseconds > 0)
+                            ? (realTimePos.inMilliseconds /
+                                    _totalDuration!.inMilliseconds)
+                                .clamp(0.0, 1.0)
+                            : 0.0;
+
+                        return RepaintBoundary(
+                          child: VinylTurntableView(
+                            lpController: _lpController,
+                            size: turntableSize,
+                            albumArtBytes: _albumArtBytes,
+                            title: _currentTitle,
+                            artist: _currentArtist,
+                            isPlaying: _isPlaying,
+                            progress: progress,
+                            accentColor: _playBtnColor,
+                            bgColor: _bgColor,
+                            onPlayPause: _handleInternalToggle,
+                            onNext: () {
+                              HapticFeedback.lightImpact();
+                              PlayerLogic.skipNext();
+                            },
+                            onPrevious: () {
+                              HapticFeedback.lightImpact();
+                              PlayerLogic.skipPrevious();
+                            },
+                            onSeek: (ratio) {
+                              final dur = _totalDuration ??
+                                  audioHandler.mediaItem.value?.duration;
+                              if (dur != null && dur.inMilliseconds > 0) {
+                                final target = Duration(
+                                    milliseconds:
+                                        (dur.inMilliseconds * ratio).round());
+                                _handleSeek(target);
+                                PlayerLogic.seekTo(ratio);
+                              }
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // LP 아래 남는 공간: 볼륨 패널 or 가사 패널
+                  if (volumePanelH > 24) ...[
+                    SizedBox(height: hPad),
+                    Expanded(
+                      child: _landscapeShowLyrics
+                          ? _buildLandscapeLyricsPanel(lpW, (volumePanelH - hPad).clamp(1.0, double.infinity))
+                          : _buildVolumePanel(lpW, (volumePanelH - hPad).clamp(1.0, double.infinity)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            SizedBox(width: hPad),
+
+            // ── 우: 글래스 정보 패널 + 시계 패널 ─────────────────────
+            Expanded(
+              flex: 35,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _buildGlassInfoPanel(
+                      Size(panelW, available),
+                      available,
+                      verticalPad: vPad,
+                      isLandscape: true,
+                      titleFontSize: titleFs,
+                      artistFontSize: artistFs,
+                      itemGap: itemGap,
+                      bigGap: bigGap,
+                      hInnerPad: hInnerPad,
+                      innerW: innerW,
+                    ),
+                  ),
+                  SizedBox(height: hPad),
+                  _buildClockPanel(panelW),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // --- 위젯 빌더 함수들 ---
+  // ── 현재 시간 패널 (가로 모드 우측 패널 하단) ─────────────────────────
+  // ── 현재 시간 패널 (가로 모드 우측 패널 하단) ─────────────────────────
+  // 5번 연속 탭 → 볼륨 ↔ 가사 전환
+  void _handleClockTap() {
+    _clockTapTimer?.cancel();
+    _clockTapCount++;
+    if (_clockTapCount >= 5) {
+      _clockTapCount = 0;
+      HapticFeedback.mediumImpact();
+      final bool turningOn = !_landscapeShowLyrics;
+      setState(() => _landscapeShowLyrics = turningOn);
+      // 가사 ON 전환 시 현재 재생 위치 즉시 동기화
+      if (turningOn) _syncLyricsPosition();
+    } else {
+      _clockTapTimer = Timer(const Duration(milliseconds: 1000), () {
+        _clockTapCount = 0;
+      });
+    }
+  }
 
+  // 가사 패널 포지션 동기화 (네이티브에서 현재 위치 가져와서 notifier 갱신)
+  Future<void> _syncLyricsPosition() async {
+    try {
+      const p = MethodChannel('com.glasnyl.app/media_control');
+      final r = await p.invokeMethod('getCurrentStatus');
+      if (r?['position'] != null && mounted) {
+        _positionNotifier.value =
+            Duration(milliseconds: (r['position'] as num).toInt());
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildClockPanel(double w) {
+    final double hPadInner = (w * 0.07).clamp(10.0, 22.0);
+    final double timeFontSize = (w * 0.14).clamp(16.0, 28.0);
+    final double iconSize = timeFontSize * 0.8;
+
+    return GestureDetector(
+      onTap: _handleClockTap,
+      child: StreamBuilder<DateTime>(
+        stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
+        initialData: DateTime.now(),
+        builder: (context, snapshot) {
+          final now = snapshot.data ?? DateTime.now();
+          final String timeText =
+              '${now.hour.toString().padLeft(2, '0')}:'
+              '${now.minute.toString().padLeft(2, '0')}';
+
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                width: w,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white.withValues(alpha: 0.07),
+                  border: Border.all(
+                    color: _landscapeShowLyrics
+                        ? _barColor.withValues(alpha: 0.45)
+                        : Colors.white.withValues(alpha: 0.18),
+                    width: _landscapeShowLyrics ? 1.4 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                padding: EdgeInsets.symmetric(
+                  horizontal: hPadInner,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(
+                      _landscapeShowLyrics
+                          ? Icons.lyrics_rounded
+                          : Icons.access_time_rounded,
+                      color: _barColor,
+                      size: iconSize,
+                    ),
+                    Text(
+                      timeText,
+                      style: TextStyle(
+                        color: _textColor.withValues(alpha: 0.90),
+                        fontSize: timeFontSize,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2.0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── 가로 모드 가사 패널 (볼륨 패널 자리를 대체) ───────────────────────
+  Widget _buildLandscapeLyricsPanel(double w, double h) {
+    final double radius = 20.0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          width: w,
+          height: h.clamp(1.0, double.infinity),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            color: Colors.white.withValues(alpha: 0.07),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          // classic_vinyl_view의 _LyricsAutoScroller와 동일한 방식으로
+          // ValueListenableBuilder로 positionNotifier를 구독
+          child: ValueListenableBuilder<Duration>(
+            valueListenable: _positionNotifier,
+            builder: (context, currentPos, _) {
+              return _LandscapeLyricsScroller(
+                key: ValueKey(_currentTitle),
+                lyrics: _lyrics,
+                currentPosition: currentPos,
+                lyricStatus: _currentStatus,
+                isPlaying: _isPlaying,
+                size: h.clamp(1.0, double.infinity), // 스크롤러 내부 itemExtent 계산용
+                barColor: _barColor,
+                textColor: _textColor,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── 글래스모피즘 볼륨 패널 ─────────────────────────────────────────────
+  Widget _buildVolumePanel(double w, double h) {
+    final bool showLabel = h > 52;
+    final double vPad = (h * 0.12).clamp(5.0, 14.0);
+    final double hPadInner = (w * 0.07).clamp(10.0, 22.0);
+    final double iconSize = (h * 0.22).clamp(12.0, 20.0);
+    final double labelFs = (h * 0.14).clamp(9.0, 13.0);
+
+    // 슬라이더 트랙 두께: 글래스 느낌 위해 도톰하게
+    final double trackH = (h * 0.22).clamp(6.0, 14.0);
+    final double thumbR = (trackH * 0.9).clamp(5.0, 12.0);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          width: w,
+          height: h.clamp(1.0, double.infinity),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: Colors.white.withValues(alpha: 0.07),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _volumeNotifier,
+            builder: (context, volume, _) => Padding(
+              padding: EdgeInsets.symmetric(horizontal: hPadInner, vertical: vPad),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showLabel) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Icon(
+                          volume < 0.05
+                              ? Icons.volume_off_rounded
+                              : volume < 0.5
+                                  ? Icons.volume_down_rounded
+                                  : Icons.volume_up_rounded,
+                          color: _barColor,
+                          size: iconSize,
+                        ),
+                        Text(
+                          '${(volume * 100).round()}%',
+                          style: TextStyle(
+                            color: _textColor.withValues(alpha: 0.65),
+                            fontSize: labelFs,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: vPad * 0.6),
+                  ],
+                  _GlassVolumeSlider(
+                    value: volume,
+                    trackHeight: trackH,
+                    thumbRadius: thumbR,
+                    activeColor: _barColor,
+                    thumbColor: _playBtnColor,
+                    bgColor: _bgColor,
+                    onChanged: (v) async {
+                      _volumeNotifier.value = v; // setState 없이 노티파이어만
+                      await PlayerLogic.setVolume(v);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 세로 모드 전체화면 통합 레이아웃
+  //
+  // [구조]
+  //  ┌─────────────────────────────────┐
+  //  │        AppBar (상단 고정)        │
+  //  ├─────────────────────────────────┤
+  //  │                                 │
+  //  │      LP 턴테이블 or             │
+  //  │      ClassicVinylView           │
+  //  │      (화면 상단 ~58%)           │
+  //  │                                 │
+  //  ├─────────────────────────────────┤
+  //  │  ┌─────────────────────────┐   │
+  //  │  │  글래스 패널 (하단 ~38%) │   │
+  //  │  │  · 제목 (MarqueeTitleWidget)│
+  //  │  │  · 가수 (ArtistTextWidget)  │
+  //  │  │  · 프로그레스바            │
+  //  │  │  · 재생 버튼 (⏮ ⏯ ⏭)   │
+  //  │  └─────────────────────────┘   │
+  //  └─────────────────────────────────┘
+  // ══════════════════════════════════════════════════════════════════════
+  // ── 세로 모드 시계 5번 탭 핸들러 ────────────────────────────────────────
+  void _handlePortraitClockTap() {
+    _portraitClockTapTimer?.cancel();
+    _portraitClockTapCount++;
+    if (_portraitClockTapCount >= 5) {
+      _portraitClockTapCount = 0;
+      HapticFeedback.mediumImpact();
+      final bool turningOn = !_portraitShowLyrics;
+      setState(() => _portraitShowLyrics = turningOn);
+      if (turningOn) _syncLyricsPosition();
+    } else {
+      _portraitClockTapTimer = Timer(const Duration(milliseconds: 1000), () {
+        _portraitClockTapCount = 0;
+      });
+    }
+  }
+
+  // ── 세로 모드 가사 패널 ──────────────────────────────────────────────────
+  Widget _buildPortraitLyricsPanel(double w, double h) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          width: w,
+          height: h.clamp(1.0, double.infinity),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            color: Colors.white.withValues(alpha: 0.07),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ValueListenableBuilder<Duration>(
+            valueListenable: _positionNotifier,
+            builder: (context, currentPos, _) => _LandscapeLyricsScroller(
+              key: ValueKey('portrait_lyrics_$_currentTitle'),
+              lyrics: _lyrics,
+              currentPosition: currentPos,
+              lyricStatus: _currentStatus,
+              isPlaying: _isPlaying,
+              size: h.clamp(1.0, double.infinity),
+              barColor: _barColor,
+              textColor: _textColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── 세로 모드 시계 패널 ──────────────────────────────────────────────────
+  Widget _buildPortraitClockPanel(double w) {
+    final double hPadInner = (w * 0.05).clamp(10.0, 22.0);
+    final double timeFontSize = (w * 0.065).clamp(16.0, 26.0);
+    final double iconSize = timeFontSize * 0.8;
+
+    return GestureDetector(
+      onTap: _handlePortraitClockTap,
+      child: StreamBuilder<DateTime>(
+        stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
+        initialData: DateTime.now(),
+        builder: (context, snapshot) {
+          final now = snapshot.data ?? DateTime.now();
+          final String timeText =
+              '${now.hour.toString().padLeft(2, '0')}:'
+              '${now.minute.toString().padLeft(2, '0')}';
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                width: w,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white.withValues(alpha: 0.07),
+                  border: Border.all(
+                    color: _portraitShowLyrics
+                        ? _barColor.withValues(alpha: 0.45)
+                        : Colors.white.withValues(alpha: 0.18),
+                    width: _portraitShowLyrics ? 1.4 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                padding: EdgeInsets.symmetric(
+                    horizontal: hPadInner, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(
+                      _portraitShowLyrics
+                          ? Icons.lyrics_rounded
+                          : Icons.access_time_rounded,
+                      color: _barColor,
+                      size: iconSize,
+                    ),
+                    Text(
+                      timeText,
+                      style: TextStyle(
+                        color: _textColor.withValues(alpha: 0.90),
+                        fontSize: timeFontSize,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 2.0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPortraitFullLayout(Size size, PlayerConfig config) {
+    final double topPad = MediaQuery.of(context).padding.top + 60.0;
+    final double botPad = MediaQuery.of(context).padding.bottom + 12.0;
+    final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
+    final double hPad = size.width * 0.04;
+
+    // ── 높이 배분: 합계가 정확히 available이 되어야 overflow 없음
+    // remaining = available - clockPanelH - gap*2
+    // turntableH + panelH = remaining * (0.585 + 0.415) = remaining
+    // → topPad + turntableH + gap + panelH + gap + clockPanelH + botPad == size.height ✓
+    final double clockPanelH = (available * 0.07).clamp(44.0, 64.0);
+    final double gap         = hPad * 0.5;
+    // clamp 최솟값을 0으로 — 100 이상으로 강제하면 합계가 size.height를 초과해 overflow 발생
+    final double remaining   = (available - clockPanelH - gap * 2).clamp(0.0, double.infinity);
+    final double turntableH  = remaining * 0.585;
+    final double panelH      = remaining * 0.415;
+    // Padding(vertical:4) = 위아래 8px → 실제 패널 콘텐츠 높이
+    final double panelContentH = (panelH - 8.0).clamp(0.0, double.infinity);
+    final double turntableSize = turntableH > 0
+        ? (size.width * 0.97).clamp(0.0, turntableH / 0.72)
+        : 0.0;
+
+    return Positioned.fill(
+      child: Column(
+        children: [
+          SizedBox(height: topPad),
+
+          // ── 상단: 턴테이블 or 가사 패널 ─────────────────────────────
+          SizedBox(
+            height: turntableH,
+            child: _portraitShowLyrics
+                ? Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: _buildPortraitLyricsPanel(
+                        size.width - hPad * 2, turntableH),
+                  )
+                : Center(
+                    child: GestureDetector(
+                      onLongPress: _handleManualRefresh,
+                      child: ValueListenableBuilder<Duration>(
+                        valueListenable: _positionNotifier,
+                        builder: (context, realTimePos, _) {
+                          if (_isMinimalMode || _showLyrics) {
+                            final double lpSz = turntableH * 0.92;
+                            return RepaintBoundary(
+                              child: ClassicVinylView(
+                                lyricStatus: _currentStatus,
+                                lyrics: _lyrics,
+                                currentPosition: realTimePos,
+                                isMinimalMode: _isMinimalMode,
+                                isLyricsMode: _showLyrics,
+                                size: lpSz,
+                                albumArtBytes: _albumArtBytes,
+                                title: _currentTitle,
+                                artist: _currentArtist,
+                                lpController: _lpController,
+                                isPlaying: _isPlaying,
+                                onToggleMode: () => setState(
+                                    () => _isMinimalMode = !_isMinimalMode),
+                                onShowLyrics: () {
+                                  setState(() => _showLyrics = true);
+                                  Future(() async {
+                                    if (_lyrics.isEmpty &&
+                                        _currentStatus != LyricStatus.loading) {
+                                      await _updateLyrics({
+                                        'title': _currentTitle,
+                                        'artist': _currentArtist,
+                                      });
+                                    }
+                                    try {
+                                      const p = MethodChannel(
+                                          'com.glasnyl.app/media_control');
+                                      final r =
+                                          await p.invokeMethod('getCurrentStatus');
+                                      if (r?['position'] != null) {
+                                        _positionNotifier.value = Duration(
+                                            milliseconds:
+                                                (r['position'] as num).toInt());
+                                      }
+                                    } catch (_) {}
+                                  });
+                                },
+                                onCloseLyrics: () =>
+                                    setState(() => _showLyrics = false),
+                              ),
+                            );
+                          }
+
+                          final double progress = (_totalDuration != null &&
+                                  _totalDuration!.inMilliseconds > 0)
+                              ? (realTimePos.inMilliseconds /
+                                      _totalDuration!.inMilliseconds)
+                                  .clamp(0.0, 1.0)
+                              : 0.0;
+
+                          return RepaintBoundary(
+                            child: VinylTurntableView(
+                              lpController: _lpController,
+                              size: turntableSize,
+                              albumArtBytes: _albumArtBytes,
+                              title: _currentTitle,
+                              artist: _currentArtist,
+                              isPlaying: _isPlaying,
+                              progress: progress,
+                              accentColor: _playBtnColor,
+                              bgColor: _bgColor,
+                              onPlayPause: _handleInternalToggle,
+                              onNext: () {
+                                HapticFeedback.lightImpact();
+                                PlayerLogic.skipNext();
+                              },
+                              onPrevious: () {
+                                HapticFeedback.lightImpact();
+                                PlayerLogic.skipPrevious();
+                              },
+                              onSeek: (ratio) {
+                                final dur = _totalDuration ??
+                                    audioHandler.mediaItem.value?.duration;
+                                if (dur != null && dur.inMilliseconds > 0) {
+                                  final target = Duration(
+                                      milliseconds:
+                                          (dur.inMilliseconds * ratio).round());
+                                  _handleSeek(target);
+                                  PlayerLogic.seekTo(ratio);
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+          ),
+
+          SizedBox(height: gap),
+
+          // ── 정보 패널 ──────────────────────────────────────────────
+          SizedBox(
+            height: panelH,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 4),
+              child: _buildGlassInfoPanel(size, panelContentH),
+            ),
+          ),
+
+          SizedBox(height: gap),
+
+          // ── 시계 패널 (5번 탭 → 가사 토글) ──────────────────────────
+          SizedBox(
+            height: clockPanelH,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: hPad),
+              child: _buildPortraitClockPanel(size.width - hPad * 2),
+            ),
+          ),
+
+          SizedBox(height: botPad),
+        ],
+      ),
+    );
+  }
+
+  // ── 글래스모피즘 정보 패널 ──────────────────────────────────────────────
+  // 기존 위젯들(MarqueeTitleWidget, ArtistTextWidget,
+  // StreamProgressBar, PlayButtonsWidget)을 유리판 위에 배치
+  Widget _buildGlassInfoPanel(
+    Size size,
+    double panelH, {
+    double? verticalPad,
+    bool isLandscape = false,
+    double? titleFontSize,
+    double? artistFontSize,
+    double? itemGap,
+    double? bigGap,
+    double? hInnerPad,
+    double? innerW,
+  }) {
+    final double sidePad = hInnerPad ?? size.width * 0.06;
+    final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08)).clamp(0.0, double.infinity);
+    final double vPad = (verticalPad ?? panelH * 0.05).clamp(0.0, double.infinity);
+
+    final double titleFs  = titleFontSize  ?? (panelH * 0.115).clamp(18.0, 32.0);
+    final double artistFs = artistFontSize ?? (panelH * 0.072).clamp(11.0, 18.0);
+    final double gap1     = itemGap ?? 0.0;          // 제목↔가수
+    final double gap2     = bigGap  ?? gap1;          // 가수↔프로그레스바
+    final double gap3     = itemGap ?? 0.0;           // 프로그레스바↔버튼
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            color: Colors.white.withValues(alpha: 0.09),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.20),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.20),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: sidePad,
+              vertical: vPad,
+            ),
+            child: Column(
+              mainAxisAlignment: isLandscape
+                  ? MainAxisAlignment.center
+                  : MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 제목 (흘러가는 마퀴)
+                SizedBox(
+                  width: iW,
+                  child: MarqueeTitleWidget(
+                    key: Key(_currentTitle),
+                    title: _currentTitle,
+                    fontSize: titleFs,
+                    textColor: _textColor,
+                    width: iW,
+                  ),
+                ),
+
+                SizedBox(height: gap1),
+
+                // 가수
+                ArtistTextWidget(
+                  artist: _currentArtist,
+                  fontSize: artistFs,
+                  color: _artistColor.withValues(alpha: 0.85),
+                ),
+
+                SizedBox(height: gap2),
+
+                // 프로그레스 바
+                SizedBox(
+                  key: _progressKey,
+                  width: iW,
+                  child: StreamProgressBar(
+                    barWidth: iW,
+                    bgColor: _bgColor,
+                    barColor: _barColor,
+                    onSeek: (ratio) {
+                      PlayerLogic.seekTo(ratio);
+                      final dur = _totalDuration ??
+                          audioHandler.mediaItem.value?.duration;
+                      if (dur != null && dur.inMilliseconds > 0) {
+                        _positionNotifier.value = Duration(
+                            milliseconds:
+                                (dur.inMilliseconds * ratio).toInt());
+                      }
+                    },
+                  ),
+                ),
+
+                SizedBox(height: gap3),
+
+                // 재생 컨트롤 버튼
+                SizedBox(
+                  width: double.infinity,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      PlayButtonsWidget.buildSideBtn(
+                        icon: Icons.skip_previous_rounded,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          PlayerLogic.skipPrevious();
+                        },
+                      ),
+                      PlayButtonsWidget.buildMainPlayBtn(
+                        isPlaying: _isPlaying,
+                        activeColor: _barColor,
+                        onTap: () {
+                          PlayerLogic.togglePlay(
+                            isPlaying: _isPlaying,
+                            onToggle: () {
+                              if (mounted) {
+                                setState(() {
+                                  _isPlaying = !_isPlaying;
+                                  if (_isPlaying) {
+                                    _lpController.repeat();
+                                    _needleController.forward();
+                                  } else {
+                                    _lpController.stop();
+                                    _needleController.reverse();
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        },
+                      ),
+                      PlayButtonsWidget.buildSideBtn(
+                        icon: Icons.skip_next_rounded,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          PlayerLogic.skipNext();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 기존 자유 배치 레이아웃 (가로 모드 / PiP / 플립커버)
+  // 기존 _buildEdit + Positioned 방식 그대로 유지
+  // ══════════════════════════════════════════════════════════════════════
+  Widget _buildLegacyLayout(
+    Size size, PlayerConfig config,
+    bool isPortrait, bool isSpecialMode,
+  ) {
+    final double leftPadding = size.width * 0.08;
+    final double safeLeftDx = (size.width * 0.85 / 2) + leftPadding;
+
+    double finalContentDx = isSpecialMode
+        ? config.titlePos.dx
+        : isPortrait
+            ? safeLeftDx
+            : config.titlePos.dx;
+
+    double finalContentWidth = isSpecialMode
+        ? size.width * 0.6
+        : isPortrait
+            ? size.width * 0.85
+            : config.progressBarWidth;
+
+    return Positioned.fill(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // LP 뷰
+          _buildEdit(
+            Offset(
+              (_isMinimalMode || _showLyrics)
+                  ? (isPortrait ? size.width / 2 : size.width * 0.25)
+                  : config.lpPos.dx,
+              config.lpPos.dy,
+            ),
+            (_isMinimalMode || _showLyrics)
+                ? config.lpSize
+                : config.lpSize * 1.35,
+            (_isMinimalMode || _showLyrics)
+                ? config.lpSize
+                : config.lpSize * 1.05,
+            (d) => config.lpPos += d,
+            (s) => config.lpSize = (config.lpSize + s).clamp(150.0, 500.0),
+            GestureDetector(
+              onLongPress: _handleManualRefresh,
+              child: ValueListenableBuilder<Duration>(
+                valueListenable: _positionNotifier,
+                builder: (context, realTimePos, _) {
+                  if (_isMinimalMode || _showLyrics) {
+                    return RepaintBoundary(
+                      child: ClassicVinylView(
+                        lyricStatus: _currentStatus,
+                        lyrics: _lyrics,
+                        currentPosition: realTimePos,
+                        isMinimalMode: _isMinimalMode,
+                        isLyricsMode: _showLyrics,
+                        size: config.lpSize,
+                        albumArtBytes: _albumArtBytes,
+                        title: _currentTitle,
+                        artist: _currentArtist,
+                        lpController: _lpController,
+                        isPlaying: _isPlaying,
+                        onToggleMode: () =>
+                            setState(() => _isMinimalMode = !_isMinimalMode),
+                        onShowLyrics: () {
+                          setState(() => _showLyrics = true);
+                          Future(() async {
+                            if (_lyrics.isEmpty &&
+                                _currentStatus != LyricStatus.loading) {
+                              await _updateLyrics({
+                                'title': _currentTitle,
+                                'artist': _currentArtist,
+                              });
+                            }
+                            try {
+                              const p =
+                                  MethodChannel('com.glasnyl.app/media_control');
+                              final r = await p.invokeMethod('getCurrentStatus');
+                              if (r?['position'] != null) {
+                                _positionNotifier.value = Duration(
+                                    milliseconds:
+                                        (r['position'] as num).toInt());
+                              }
+                            } catch (_) {}
+                          });
+                        },
+                        onCloseLyrics: () =>
+                            setState(() => _showLyrics = false),
+                      ),
+                    );
+                  }
+
+                  final double progress = (_totalDuration != null &&
+                          _totalDuration!.inMilliseconds > 0)
+                      ? (realTimePos.inMilliseconds /
+                              _totalDuration!.inMilliseconds)
+                          .clamp(0.0, 1.0)
+                      : 0.0;
+
+                  return RepaintBoundary(
+                    child: VinylTurntableView(
+                      lpController: _lpController,
+                      size: config.lpSize * 1.35,
+                      albumArtBytes: _albumArtBytes,
+                      title: _currentTitle,
+                      artist: _currentArtist,
+                      isPlaying: _isPlaying,
+                      progress: progress,
+                      accentColor: _playBtnColor,
+                      bgColor: _bgColor,
+                      onPlayPause: _handleInternalToggle,
+                      onNext: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipNext();
+                      },
+                      onPrevious: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipPrevious();
+                      },
+                      onSeek: (ratio) {
+                        final dur = _totalDuration ??
+                            audioHandler.mediaItem.value?.duration;
+                        if (dur != null && dur.inMilliseconds > 0) {
+                          final target = Duration(
+                              milliseconds:
+                                  (dur.inMilliseconds * ratio).round());
+                          _handleSeek(target);
+                          PlayerLogic.seekTo(ratio);
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // 제목
+          _buildEdit(
+            Offset(finalContentDx, config.titlePos.dy),
+            finalContentWidth, config.titleSize * 1.5,
+            (d) => config.titlePos += d,
+            (s) => config.titleSize =
+                (config.titleSize + s * 0.1).clamp(20.0, 80.0),
+            ClipRect(
+              child: SizedBox(
+                width: finalContentWidth > 0 ? finalContentWidth : 200,
+                child: Align(
+                  alignment: isPortrait
+                      ? Alignment.centerLeft
+                      : Alignment.center,
+                  child: MarqueeTitleWidget(
+                    key: Key(_currentTitle),
+                    title: _currentTitle,
+                    fontSize: config.titleSize * 1.1,
+                    textColor: _textColor,
+                    width: finalContentWidth,
+                    isPip: _isPipMode,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 가수
+          _buildEdit(
+            Offset(finalContentDx, config.artistPos.dy),
+            finalContentWidth, 40,
+            (d) => config.artistPos += d,
+            (s) => config.artistSize =
+                (config.artistSize + s * 0.1).clamp(10.0, 40.0),
+            Align(
+              alignment:
+                  isPortrait ? Alignment.centerLeft : Alignment.center,
+              child: ArtistTextWidget(
+                artist: _currentArtist,
+                fontSize: config.artistSize,
+                color: _artistColor.withValues(alpha: 0.8),
+              ),
+            ),
+          ),
+
+          // 프로그레스 바
+          _buildEdit(
+            config.progressBarPos, config.progressBarWidth, 40,
+            (d) => config.progressBarPos += d,
+            (s) => config.progressBarWidth =
+                (config.progressBarWidth + s).clamp(100.0, size.width),
+            SizedBox(
+              key: _progressKey,
+              width: config.progressBarWidth,
+              child: StreamProgressBar(
+                barWidth: config.progressBarWidth,
+                bgColor: _bgColor,
+                barColor: _barColor,
+                onSeek: (ratio) {
+                  PlayerLogic.seekTo(ratio);
+                  final dur = _totalDuration ??
+                      audioHandler.mediaItem.value?.duration;
+                  if (dur != null && dur.inMilliseconds > 0) {
+                    _positionNotifier.value = Duration(
+                        milliseconds:
+                            (dur.inMilliseconds * ratio).toInt());
+                  }
+                },
+              ),
+            ),
+          ),
+
+          // 이전 곡
+          _buildEdit(
+            config.prevButtonPos, 60, 60,
+            (d) => config.prevButtonPos += d, (_) {},
+            PlayButtonsWidget.buildSideBtn(
+              icon: Icons.skip_previous_rounded,
+              onTap: PlayerLogic.skipPrevious,
+            ),
+          ),
+
+          // 재생/정지
+          _buildEdit(
+            config.playButtonsPos, 90, 90,
+            (d) => config.playButtonsPos += d, (_) {},
+            PlayButtonsWidget.buildMainPlayBtn(
+              isPlaying: _isPlaying,
+              activeColor: _barColor,
+              onTap: () {
+                PlayerLogic.togglePlay(
+                  isPlaying: _isPlaying,
+                  onToggle: () {
+                    if (mounted) {
+                      setState(() {
+                        _isPlaying = !_isPlaying;
+                        if (_isPlaying) {
+                          _lpController.repeat();
+                          _needleController.forward();
+                        } else {
+                          _lpController.stop();
+                          _needleController.reverse();
+                        }
+                      });
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+
+          // 다음 곡
+          _buildEdit(
+            config.nextButtonPos, 60, 60,
+            (d) => config.nextButtonPos += d, (_) {},
+            PlayButtonsWidget.buildSideBtn(
+              icon: Icons.skip_next_rounded,
+              onTap: PlayerLogic.skipNext,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 편집 가능 요소 래퍼
+  // ──────────────────────────────────────────────────────────────────────
   Widget _buildEdit(
-    Offset pos,
-    double w,
-    double h,
+    Offset pos, double w, double h,
     Function(Offset) onDrag,
     Function(double) onResize,
     Widget child,
   ) {
-    // 1. Stack의 직계 자식이 되도록 여기서 Positioned를 선언합니다.
     return Positioned(
-      // 중앙 좌표 계산 로직을 여기로 가져옵니다.
       left: pos.dx - (w / 2),
       top: pos.dy - (h / 2),
       child: EditableElement(
         isEditMode: isEditMode,
-        // 2. [중요] 생성자에서 삭제한 position 파라미터는 더 이상 넣지 않습니다.
-        width: w,
-        height: h,
+        width: w, height: h,
         onDrag: (d) => setState(() => onDrag(d)),
         onResizeDelta: (s) => setState(() => onResize(s)),
         child: child,
       ),
     );
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 가로 모드 전용 가사 스크롤러
+// classic_vinyl_view의 _LyricsAutoScroller 로직을 그대로 활용
+// ════════════════════════════════════════════════════════════════════════
+class _LandscapeLyricsScroller extends StatefulWidget {
+  final List<dynamic> lyrics;
+  final Duration currentPosition;
+  final LyricStatus lyricStatus;
+  final bool isPlaying;
+  final double size;
+  final Color barColor;
+  final Color textColor;
+
+  const _LandscapeLyricsScroller({
+    super.key,
+    required this.lyrics,
+    required this.currentPosition,
+    required this.lyricStatus,
+    required this.isPlaying,
+    required this.size,
+    required this.barColor,
+    required this.textColor,
+  });
+
+  @override
+  State<_LandscapeLyricsScroller> createState() =>
+      _LandscapeLyricsScrollerState();
+}
+
+class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late ScrollController _scrollController;
+  late Ticker _ticker;
+
+  int _lastIndex = -1;
+  int _maxIndexReached = -1;
+  bool _isUserInteracting = false;
+  Timer? _debounceTimer;
+
+  Duration _basePosition = Duration.zero;
+  Duration _elapsedSinceSync = Duration.zero;
+  Duration _lastTickerCheck = Duration.zero;
+  static const Duration _throttleInterval = Duration(milliseconds: 25);
+
+  late final double _baseSize;
+  late final double _currentSize;
+  late final double _itemExtent;
+
+  double _offsetForIndex(int index) => index * _itemExtent;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseSize    = (widget.size * 0.055).clamp(11.0, 15.0);
+    _currentSize = (widget.size * 0.075).clamp(14.0, 20.0);
+    _itemExtent  = _currentSize * 2.8;
+
+    _basePosition    = widget.currentPosition;
+    _lastIndex       = _calculateCurrentIndex(_basePosition);
+    _maxIndexReached = _lastIndex;
+
+    final double initOffset = _lastIndex > 0
+        ? _offsetForIndex(_lastIndex).clamp(0.0, double.infinity)
+        : 0.0;
+    _scrollController = ScrollController(initialScrollOffset: initOffset);
+    WidgetsBinding.instance.addObserver(this);
+
+    _ticker = createTicker((elapsed) {
+      if (!mounted || !widget.isPlaying || _isUserInteracting) return;
+      if (elapsed - _lastTickerCheck < _throttleInterval) return;
+      _lastTickerCheck = elapsed;
+      _elapsedSinceSync = elapsed;
+      _checkAndScroll();
+    });
+    if (widget.isPlaying) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LandscapeLyricsScroller old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlaying != old.isPlaying) {
+      if (widget.isPlaying) {
+        _basePosition     = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        if (!_ticker.isTicking) _ticker.start();
+      } else {
+        _ticker.stop();
+        _basePosition     = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+      }
+    }
+    if (widget.currentPosition != old.currentPosition) {
+      final estimatedNow = _basePosition + _elapsedSinceSync;
+      final bool isSeek =
+          (widget.currentPosition - old.currentPosition).abs().inMilliseconds > 300 ||
+          widget.currentPosition < old.currentPosition;
+      if (isSeek || (widget.currentPosition - estimatedNow).abs() > const Duration(milliseconds: 500)) {
+        _basePosition     = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        _lastTickerCheck  = Duration.zero;
+        if (_ticker.isTicking) { _ticker.stop(); _ticker.start(); }
+        int newIdx = _calculateCurrentIndex(widget.currentPosition);
+        _lastIndex       = newIdx;
+        _maxIndexReached = newIdx;
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(
+            _offsetForIndex(newIdx >= 0 ? newIdx : 0).clamp(0.0, double.infinity),
+          );
+        }
+      }
+    }
+    if (widget.lyrics != old.lyrics) {
+      _basePosition     = widget.currentPosition;
+      _elapsedSinceSync = Duration.zero;
+      _lastIndex       = -1;
+      _maxIndexReached = -1;
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _basePosition     = widget.currentPosition;
+      _elapsedSinceSync = Duration.zero;
+      int newIdx = _calculateCurrentIndex(_basePosition);
+      _lastIndex       = newIdx;
+      _maxIndexReached = newIdx;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(
+            _offsetForIndex(newIdx >= 0 ? newIdx : 0).clamp(0.0, double.infinity),
+          );
+        }
+      });
+      if (widget.isPlaying && !_ticker.isTicking) _ticker.start();
+    }
+    if (state == AppLifecycleState.paused) {
+      if (_ticker.isTicking) _ticker.stop();
+    }
+  }
+
+  void _checkAndScroll() {
+    if (_isUserInteracting || !_scrollController.hasClients) return;
+    final precisePos = _basePosition + _elapsedSinceSync + const Duration(milliseconds: 50);
+    int currentIndex = _calculateCurrentIndex(precisePos);
+    if (currentIndex != -1 && currentIndex != _lastIndex) {
+      final skipped = currentIndex - _lastIndex;
+      _lastIndex = currentIndex;
+      if (currentIndex > _maxIndexReached) _maxIndexReached = currentIndex;
+      if (mounted) setState(() {});
+      final double maxScroll = _scrollController.position.maxScrollExtent;
+      final double offset = _offsetForIndex(currentIndex).clamp(0.0, maxScroll);
+      if (skipped >= 2) {
+        _scrollController.jumpTo(offset);
+      } else {
+        _scrollController.animateTo(offset,
+            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      }
+    }
+  }
+
+  int _calculateCurrentIndex(Duration pos) {
+    if (widget.lyrics.isEmpty) return -1;
+    int lo = 0, hi = widget.lyrics.length - 1, index = -1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      final item = widget.lyrics[mid];
+      if (item is LyricLine && item.time <= pos) {
+        index = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (index < _maxIndexReached && _maxIndexReached != -1) return _maxIndexReached;
+    return index;
+  }
+
+  void _onUserInteraction() {
+    _isUserInteracting = true;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _isUserInteracting = false);
+        _basePosition     = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        _maxIndexReached  = _calculateCurrentIndex(_basePosition);
+        _checkAndScroll();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _debounceTimer?.cancel();
+    _scrollController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.lyrics.isEmpty) {
+      return Center(
+        child: widget.lyricStatus == LyricStatus.loading
+            ? const SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+            : Text(
+                widget.lyricStatus == LyricStatus.noLyrics
+                    ? 'No lyrics found'
+                    : 'Unable to load lyrics',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
+              ),
+      );
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n is ScrollStartNotification && n.dragDetails != null) {
+          _onUserInteraction();
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.symmetric(vertical: widget.size / 2 - _itemExtent / 2),
+        itemCount: widget.lyrics.length,
+        itemExtent: _itemExtent,
+        itemBuilder: (context, index) {
+          final isCurrent = index == _lastIndex;
+          return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: TextStyle(
+                  color: isCurrent
+                      ? Colors.white.withValues(alpha: 1.0)
+                      : Colors.white.withValues(alpha: 0.28),
+                  fontSize: isCurrent ? _currentSize : _baseSize,
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                  height: 1.3,
+                ),
+                child: Text(
+                  widget.lyrics[index].text ?? '',
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 글래스모피즘 볼륨 슬라이더
+class _GlassVolumeSlider extends StatefulWidget {
+  final double value;
+  final double trackHeight;
+  final double thumbRadius;
+  final Color activeColor;
+  final Color thumbColor;
+  final Color bgColor;
+  final ValueChanged<double> onChanged;
+
+  const _GlassVolumeSlider({
+    required this.value,
+    required this.trackHeight,
+    required this.thumbRadius,
+    required this.activeColor,
+    required this.thumbColor,
+    required this.bgColor,
+    required this.onChanged,
+  });
+
+  @override
+  State<_GlassVolumeSlider> createState() => _GlassVolumeSliderState();
+}
+
+class _GlassVolumeSliderState extends State<_GlassVolumeSlider> {
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double trackW = constraints.maxWidth;
+        final double th = widget.trackHeight;
+        final double tr = widget.thumbRadius;
+        // 전체 높이: thumb 지름 + 터치 여유
+        final double totalH = tr * 2 + 8;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (d) {
+            setState(() => _dragging = true);
+            _update(d.localPosition.dx, trackW, tr);
+          },
+          onPanUpdate: (d) => _update(d.localPosition.dx, trackW, tr),
+          onPanEnd: (_) => setState(() => _dragging = false),
+          onTapDown: (d) => _update(d.localPosition.dx, trackW, tr),
+          child: SizedBox(
+            width: trackW,
+            height: totalH,
+            child: CustomPaint(
+              painter: _GlassTrackPainter(
+                value: widget.value,
+                trackHeight: th,
+                thumbRadius: tr,
+                activeColor: widget.activeColor,
+                thumbColor: widget.thumbColor,
+                bgColor: widget.bgColor,
+                dragging: _dragging,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _update(double dx, double trackW, double tr) {
+    // 썸이 트랙 양 끝에 걸치므로 유효 범위는 tr ~ trackW-tr
+    final double ratio = ((dx - tr) / (trackW - tr * 2)).clamp(0.0, 1.0);
+    widget.onChanged(ratio);
+  }
+}
+
+class _GlassTrackPainter extends CustomPainter {
+  final double value;
+  final double trackHeight;
+  final double thumbRadius;
+  final Color activeColor;
+  final Color thumbColor;
+  final Color bgColor;
+  final bool dragging;
+
+  _GlassTrackPainter({
+    required this.value,
+    required this.trackHeight,
+    required this.thumbRadius,
+    required this.activeColor,
+    required this.thumbColor,
+    required this.bgColor,
+    required this.dragging,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double cy = size.height / 2;
+    // 트랙을 더 얇고 날렵하게 (유리판 위의 정교한 선 느낌)
+    final double th = 5.0; 
+    final double tr = thumbRadius * 0.9;
+    final double left = tr;
+    final double right = size.width - tr;
+    final double fillX = left + (right - left) * value;
+
+    final Radius r = Radius.circular(th / 2);
+
+    // ── ① 프로스티드 글래스 트랙 (배경)
+    // 하단 패널과 동일하게 매우 낮은 투명도의 화이트 사용
+    final Paint inactivePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.15)
+      ..style = PaintingStyle.fill;
+    
+    final RRect inactiveRRect = RRect.fromLTRBR(
+        left, cy - th / 2, right, cy + th / 2, r);
+    canvas.drawRRect(inactiveRRect, inactivePaint);
+
+    // 유리 질감을 위한 미세한 하이라이트 외곽선
+    final Paint borderPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    canvas.drawRRect(inactiveRRect, borderPaint);
+
+    // ── ② 활성 트랙 (네온 혹은 은은한 그라데이션)
+    if (fillX > left) {
+      final Paint activePaint = Paint()
+        ..shader = LinearGradient(
+          colors: [
+            activeColor.withValues(alpha: 0.3),
+            activeColor.withValues(alpha: 0.7),
+          ],
+        ).createShader(Rect.fromLTRB(left, cy - th / 2, fillX, cy + th / 2))
+        ..style = PaintingStyle.fill;
+        
+      final RRect activeRRect = RRect.fromLTRBR(
+          left, cy - th / 2, fillX, cy + th / 2, r);
+      canvas.drawRRect(activeRRect, activePaint);
+    }
+
+    // ── ③ 썸(Thumb): 반투명 유리 디스크
+    // glow는 MaskFilter.blur 대신 단순 반투명 원으로 — GPU 비용 제거
+    final double glowR = dragging ? tr * 2.0 : tr * 1.5;
+    final Paint glowPaint = Paint()
+      ..color = activeColor.withValues(alpha: dragging ? 0.28 : 0.12)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(fillX, cy), glowR, glowPaint);
+
+    // 2. 썸 본체 (Frosted Glass 효과)
+    // 완전 불투명이 아닌, 배경이 살짝 비치는 고광택 화이트
+    final Paint thumbBodyPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.85)
+      ..style = PaintingStyle.fill;
+    
+    // 3. 썸 테두리 (유리의 날카로운 단면 하이라이트)
+    // 이 선이 있어야 '유리 물체'라는 느낌이 강하게 납니다.
+    final Paint thumbStrokePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+
+    // 4. 중앙 포인트 (포커스 링)
+    // 현재 재생 중인 테마의 포인트 컬러를 사용하여 일관성을 부여합니다.
+    final Paint thumbPointPaint = Paint()
+      ..color = thumbColor
+      ..style = PaintingStyle.fill;
+
+    // 실제로 그리기
+    canvas.drawCircle(Offset(fillX, cy), tr * 0.85, thumbBodyPaint); // 본체
+    canvas.drawCircle(Offset(fillX, cy), tr * 0.85, thumbStrokePaint); // 테두리
+    
+    // 중앙에 아주 작은 점을 찍어 정교함을 더함
+    canvas.drawCircle(Offset(fillX, cy), tr * 0.3, thumbPointPaint);
+  }
+
+  @override
+  bool shouldRepaint(_GlassTrackPainter old) =>
+      old.value != value || old.dragging != dragging;
 }
