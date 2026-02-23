@@ -153,8 +153,14 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
             ? constraints.maxWidth
             : widget.width.clamp(1.0, double.infinity);
 
-        // 노브 left = 트랙 시작점(0) + usable * factor
-        final double knobLeft = (trackW - _knobR * 2).clamp(0.0, double.infinity) * displayFactor;
+        // 노브 지름보다 작으면 렌더 불가 — 빈 박스 반환으로 크래시 방지
+        if (trackW < _knobR * 2) {
+          return SizedBox(width: trackW, height: 40);
+        }
+
+        // 노브 left = 트랙 시작점(0) + usable * factor — 반드시 [0, usable] 안에 있어야 함
+        final double usable = (trackW - _knobR * 2).clamp(0.0, double.infinity);
+        final double knobLeft = (usable * displayFactor).clamp(0.0, usable);
         // 진행 바 너비 = knobLeft + knobR (노브 중앙까지)
         final double fillW = (knobLeft + _knobR).clamp(0.0, trackW);
 
@@ -185,7 +191,7 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
             width: trackW,
             height: 40,
             child: Stack(
-              clipBehavior: Clip.none,
+              clipBehavior: Clip.hardEdge,
               alignment: Alignment.centerLeft,
               children: [
                 // 1. [배경 바] — 노브 반지름만큼 양쪽 안쪽에서 시작
@@ -291,15 +297,16 @@ class PlayButtonsWidget extends StatelessWidget {
 
 
   // 1. 사이드 버튼 (이전/다음): 극도로 미니멀한 투명 유리 느낌
-static Widget buildSideBtn({
+  static Widget buildSideBtn({
     required IconData icon,
     required VoidCallback onTap,
+    double size = 55,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 55,
-        height: 55,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.white.withValues(alpha: 0.1),
@@ -310,7 +317,7 @@ static Widget buildSideBtn({
         ),
         child: Icon(
           icon,
-          size: 30,
+          size: size * 0.52,
           color: Colors.white.withValues(alpha: 0.9),
         ),
       ),
@@ -322,13 +329,14 @@ static Widget buildSideBtn({
     required bool isPlaying,
     required Color activeColor,
     required VoidCallback onTap,
+    double size = 80,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        width: 80,
-        height: 80,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: isPlaying
@@ -355,7 +363,7 @@ static Widget buildSideBtn({
         child: Center(
           child: Icon(
             isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            size: 45,
+            size: size * 0.52,
             color: isPlaying ? activeColor : Colors.white,
           ),
         ),

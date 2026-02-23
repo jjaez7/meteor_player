@@ -640,6 +640,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   _buildLandscapeFullLayout(size, config)
                 else if (_isPipMode)
                   _buildPipLayout(size)
+                else if (isFlipCover)
+                  _buildFlipCoverLayout(size)
                 else
                   _buildLegacyLayout(size, config, isPortrait, isSpecialMode),
 
@@ -729,13 +731,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double volumePanelH = (available - lpH).clamp(0.0, double.infinity);
 
     // ── 우측 패널 폰트/간격: panelW, available 비례로 자동 계산 ──────────
-    final double titleFs   = (panelW * 0.13).clamp(16.0, 36.0);
-    final double artistFs  = (panelW * 0.075).clamp(11.0, 22.0);
-    final double itemGap   = (available * 0.025).clamp(4.0, 18.0);
-    final double bigGap    = (available * 0.045).clamp(8.0, 28.0);
-    final double vPad      = (available * 0.04).clamp(6.0, 20.0);
+    final double titleFs   = (panelW * 0.13).clamp(13.0, 36.0);
+    final double artistFs  = (panelW * 0.075).clamp(10.0, 22.0);
+    final double itemGap   = (available * 0.025).clamp(0.0, 18.0);
+    final double bigGap    = (available * 0.045).clamp(0.0, 28.0);
+    final double vPad      = (available * 0.04).clamp(0.0, 20.0);
     final double hInnerPad = (panelW * 0.07).clamp(10.0, 28.0);
-    final double innerW    = (panelW - hInnerPad * 2).clamp(0.0, double.infinity);
+    final double innerW    = (panelW - hInnerPad * 2).clamp(1.0, double.infinity);
 
     return Positioned.fill(
       child: Padding(
@@ -1045,15 +1047,25 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // ── 글래스모피즘 볼륨 패널 ─────────────────────────────────────────────
   Widget _buildVolumePanel(double w, double h) {
-    final bool showLabel = h > 52;
-    final double vPad = (h * 0.12).clamp(5.0, 14.0);
-    final double hPadInner = (w * 0.07).clamp(10.0, 22.0);
-    final double iconSize = (h * 0.22).clamp(12.0, 20.0);
-    final double labelFs = (h * 0.14).clamp(9.0, 13.0);
+    final double safeH   = h.clamp(1.0, double.infinity);
+    final double thumbR  = (safeH * 0.18).clamp(5.0, 12.0);
+    final double trackH  = thumbR;
+    // _GlassVolumeSlider 내부 totalH = thumbR * 2 + 8
+    final double sliderH = thumbR * 2 + 8;
 
-    // 슬라이더 트랙 두께: 글래스 느낌 위해 도톰하게
-    final double trackH = (h * 0.22).clamp(6.0, 14.0);
-    final double thumbR = (trackH * 0.9).clamp(5.0, 12.0);
+    final double iconSize = (safeH * 0.22).clamp(12.0, 20.0);
+    final double labelFs  = (safeH * 0.14).clamp(9.0, 13.0);
+    // 레이블 행 높이 = 아이콘 높이 (텍스트는 아이콘보다 작으므로)
+    final double labelRowH = iconSize;
+    final double gapAfterLabel = 6.0;
+
+    // 레이블 포함 시 필요한 총 높이
+    final double contentWithLabel = labelRowH + gapAfterLabel + sliderH;
+    // vPad: 슬라이더만 있을 때 기준으로 여백 계산 (레이블은 별도로 추가됨)
+    final double vPad = ((safeH - sliderH) / 2).clamp(0.0, 12.0);
+
+    // 레이블 표시 조건: vPad*2 + contentWithLabel이 safeH 이하일 때
+    final bool showLabel = vPad * 2 + contentWithLabel <= safeH;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -1061,7 +1073,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           width: w,
-          height: h.clamp(1.0, double.infinity),
+          height: safeH,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             color: Colors.white.withValues(alpha: 0.07),
@@ -1079,51 +1091,57 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
           child: ValueListenableBuilder<double>(
             valueListenable: _volumeNotifier,
-            builder: (context, volume, _) => Padding(
-              padding: EdgeInsets.symmetric(horizontal: hPadInner, vertical: vPad),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (showLabel) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Icon(
-                          volume < 0.05
-                              ? Icons.volume_off_rounded
-                              : volume < 0.5
-                                  ? Icons.volume_down_rounded
-                                  : Icons.volume_up_rounded,
-                          color: _barColor,
-                          size: iconSize,
-                        ),
-                        Text(
-                          '${(volume * 100).round()}%',
-                          style: TextStyle(
-                            color: _textColor.withValues(alpha: 0.65),
-                            fontSize: labelFs,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
+            builder: (context, volume, _) => ClipRect(
+              // ClipRect로 혹시라도 남는 1~2px overflow를 조용히 잘라냄
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: (w * 0.07).clamp(8.0, 22.0),
+                  vertical: vPad,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showLabel) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Icon(
+                            volume < 0.05
+                                ? Icons.volume_off_rounded
+                                : volume < 0.5
+                                    ? Icons.volume_down_rounded
+                                    : Icons.volume_up_rounded,
+                            color: _barColor,
+                            size: iconSize,
                           ),
-                        ),
-                      ],
+                          Text(
+                            '${(volume * 100).round()}%',
+                            style: TextStyle(
+                              color: _textColor.withValues(alpha: 0.65),
+                              fontSize: labelFs,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    _GlassVolumeSlider(
+                      value: volume,
+                      trackHeight: trackH,
+                      thumbRadius: thumbR,
+                      activeColor: _barColor,
+                      thumbColor: _playBtnColor,
+                      bgColor: _bgColor,
+                      onChanged: (v) async {
+                        _volumeNotifier.value = v;
+                        await PlayerLogic.setVolume(v);
+                      },
                     ),
-                    SizedBox(height: vPad * 0.6),
                   ],
-                  _GlassVolumeSlider(
-                    value: volume,
-                    trackHeight: trackH,
-                    thumbRadius: thumbR,
-                    activeColor: _barColor,
-                    thumbColor: _playBtnColor,
-                    bgColor: _bgColor,
-                    onChanged: (v) async {
-                      _volumeNotifier.value = v; // setState 없이 노티파이어만
-                      await PlayerLogic.setVolume(v);
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1289,18 +1307,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
     final double hPad = size.width * 0.04;
 
-    // ── 높이 배분: 합계가 정확히 available이 되어야 overflow 없음
-    // remaining = available - clockPanelH - gap*2
-    // turntableH + panelH = remaining * (0.585 + 0.415) = remaining
-    // → topPad + turntableH + gap + panelH + gap + clockPanelH + botPad == size.height ✓
-    final double clockPanelH = (available * 0.07).clamp(44.0, 64.0);
+    // ── 높이 배분: clockPanelH를 비율로만 계산해 합계 초과 방지
+    // available이 아무리 작아도 각 영역이 음수/0이 되지 않도록 비율 기반으로 처리
     final double gap         = hPad * 0.5;
-    // clamp 최솟값을 0으로 — 100 이상으로 강제하면 합계가 size.height를 초과해 overflow 발생
+    final double clockPanelH = (available * 0.07).clamp(0.0, 64.0); // 최솟값 0으로 완화
     final double remaining   = (available - clockPanelH - gap * 2).clamp(0.0, double.infinity);
     final double turntableH  = remaining * 0.585;
     final double panelH      = remaining * 0.415;
     // Padding(vertical:4) = 위아래 8px → 실제 패널 콘텐츠 높이
-    final double panelContentH = (panelH - 8.0).clamp(0.0, double.infinity);
+    final double panelContentH = (panelH - 8.0).clamp(1.0, double.infinity);
     final double turntableSize = turntableH > 0
         ? (size.width * 0.97).clamp(0.0, turntableH / 0.72)
         : 0.0;
@@ -1460,21 +1475,32 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     double? hInnerPad,
     double? innerW,
   }) {
-    final double sidePad = hInnerPad ?? size.width * 0.06;
-    final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08)).clamp(0.0, double.infinity);
-    final double vPad = (verticalPad ?? panelH * 0.05).clamp(0.0, double.infinity);
+    // 패널 높이 최솟값 보장
+    final double safeH = panelH.clamp(1.0, double.infinity);
 
-    final double titleFs  = titleFontSize  ?? (panelH * 0.115).clamp(18.0, 32.0);
-    final double artistFs = artistFontSize ?? (panelH * 0.072).clamp(11.0, 18.0);
-    final double gap1     = itemGap ?? 0.0;          // 제목↔가수
-    final double gap2     = bigGap  ?? gap1;          // 가수↔프로그레스바
-    final double gap3     = itemGap ?? 0.0;           // 프로그레스바↔버튼
+    final double sidePad = hInnerPad ?? size.width * 0.06;
+    final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08)).clamp(1.0, double.infinity);
+    final double vPad = (verticalPad ?? (safeH * 0.05)).clamp(0.0, 16.0);
+
+    final double titleFs  = titleFontSize  ?? (safeH * 0.10).clamp(13.0, 28.0);
+    final double artistFs = artistFontSize ?? (safeH * 0.065).clamp(10.0, 16.0);
+
+    // 요소 간 간격: 외부 값 우선, 없으면 safeH 비례로 소폭만 줌
+    // → 큰 화면에서도 요소들이 중앙에 모여있도록 상한 작게 유지
+    final double gap1 = (itemGap ?? (safeH * 0.03)).clamp(2.0, 8.0);   // 제목 ↔ 가수
+    final double gap2 = (bigGap  ?? (safeH * 0.05)).clamp(4.0, 14.0);  // 가수 ↔ 프로그레스바
+    final double gap3 = (safeH * 0.04).clamp(3.0, 12.0);               // 프로그레스바 ↔ 버튼
+
+    // 버튼 크기: safeH 비례, 상한으로 과도하게 커지는 것 방지
+    final double sideBtnSz = (safeH * 0.13).clamp(36.0, 54.0);
+    final double mainBtnSz = (safeH * 0.20).clamp(50.0, 78.0);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
+          height: safeH,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
             color: Colors.white.withValues(alpha: 0.09),
@@ -1496,12 +1522,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
               vertical: vPad,
             ),
             child: Column(
-              mainAxisAlignment: isLandscape
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.spaceEvenly,
+              // center: 요소들이 중앙에 모여있고, gap으로만 간격 조절
+              // → 큰 화면에서도 다닥다닥 붙어있는 느낌
+              mainAxisSize: MainAxisSize.max,
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 제목 (흘러가는 마퀴)
+                // ① 제목
                 SizedBox(
                   width: iW,
                   child: MarqueeTitleWidget(
@@ -1515,7 +1542,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                 SizedBox(height: gap1),
 
-                // 가수
+                // ② 가수
                 ArtistTextWidget(
                   artist: _currentArtist,
                   fontSize: artistFs,
@@ -1524,12 +1551,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                 SizedBox(height: gap2),
 
-                // 프로그레스 바
+                // ③ 프로그레스 바
                 SizedBox(
                   key: _progressKey,
                   width: iW,
                   child: StreamProgressBar(
-                    barWidth: iW,
+                    barWidth: iW.clamp(1.0, double.infinity),
                     bgColor: _bgColor,
                     barColor: _barColor,
                     onSeek: (ratio) {
@@ -1547,54 +1574,125 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                 SizedBox(height: gap3),
 
-                // 재생 컨트롤 버튼
-                SizedBox(
-                  width: double.infinity,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      PlayButtonsWidget.buildSideBtn(
-                        icon: Icons.skip_previous_rounded,
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          PlayerLogic.skipPrevious();
-                        },
-                      ),
-                      PlayButtonsWidget.buildMainPlayBtn(
-                        isPlaying: _isPlaying,
-                        activeColor: _barColor,
-                        onTap: () {
-                          PlayerLogic.togglePlay(
-                            isPlaying: _isPlaying,
-                            onToggle: () {
-                              if (mounted) {
-                                setState(() {
-                                  _isPlaying = !_isPlaying;
-                                  if (_isPlaying) {
-                                    _lpController.repeat();
-                                    _needleController.forward();
-                                  } else {
-                                    _lpController.stop();
-                                    _needleController.reverse();
-                                  }
-                                });
-                              }
-                            },
-                          );
-                        },
-                      ),
-                      PlayButtonsWidget.buildSideBtn(
-                        icon: Icons.skip_next_rounded,
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          PlayerLogic.skipNext();
-                        },
-                      ),
-                    ],
-                  ),
+                // ④ 재생 컨트롤 버튼
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildScaledSideBtn(
+                      icon: Icons.skip_previous_rounded,
+                      size: sideBtnSz,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipPrevious();
+                      },
+                    ),
+                    _buildScaledMainBtn(
+                      isPlaying: _isPlaying,
+                      size: mainBtnSz,
+                      activeColor: _barColor,
+                      onTap: () {
+                        PlayerLogic.togglePlay(
+                          isPlaying: _isPlaying,
+                          onToggle: () {
+                            if (mounted) {
+                              setState(() {
+                                _isPlaying = !_isPlaying;
+                                if (_isPlaying) {
+                                  _lpController.repeat();
+                                  _needleController.forward();
+                                } else {
+                                  _lpController.stop();
+                                  _needleController.reverse();
+                                }
+                              });
+                            }
+                          },
+                        );
+                      },
+                    ),
+                    _buildScaledSideBtn(
+                      icon: Icons.skip_next_rounded,
+                      size: sideBtnSz,
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipNext();
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 패널 크기에 비례하는 사이드 버튼
+  Widget _buildScaledSideBtn({
+    required IconData icon,
+    required double size,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.10),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15),
+            width: 1.5,
+          ),
+        ),
+        child: Icon(icon, size: size * 0.52, color: Colors.white.withValues(alpha: 0.9)),
+      ),
+    );
+  }
+
+  // 패널 크기에 비례하는 메인 재생 버튼
+  Widget _buildScaledMainBtn({
+    required bool isPlaying,
+    required double size,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isPlaying
+              ? Colors.white.withValues(alpha: 0.25)
+              : Colors.white.withValues(alpha: 0.15),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.30),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+            if (isPlaying)
+              BoxShadow(
+                color: activeColor.withValues(alpha: 0.30),
+                blurRadius: 25,
+                spreadRadius: 2,
+              ),
+          ],
+        ),
+        child: Center(
+          child: Icon(
+            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: size * 0.52,
+            color: isPlaying ? activeColor : Colors.white,
           ),
         ),
       ),
@@ -1766,6 +1864,415 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 갤럭시 플립 커버스크린 전용 레이아웃
+  //
+  // 커버 화면은 가로(landscape) + 좁음(width < 600)이 특징
+  // 세로로 중심 콘텐츠를 배치:
+  //  ┌──────────────────────────────┐
+  //  │        시간 + 날짜           │  ← 상단 컴팩트 헤더
+  //  ├──────────────────────────────┤
+  //  │   앨범아트 (원형, 중앙)       │  ← 화면 높이의 ~45%
+  //  ├──────────────────────────────┤
+  //  │   제목 / 가수                │  ← 텍스트
+  //  │   프로그레스 바              │
+  //  ├──────────────────────────────┤
+  //  │   ⏮  ⏯  ⏭    🔊          │  ← 컨트롤 + 볼륨
+  //  └──────────────────────────────┘
+  // ══════════════════════════════════════════════════════════════════════
+  Widget _buildFlipCoverLayout(Size size) {
+    final double w = size.width;
+    final double h = size.height;
+
+    // 안전 패딩
+    final EdgeInsets safePad = MediaQuery.of(context).padding;
+    final double safeH = (h - safePad.top - safePad.bottom).clamp(1.0, double.infinity);
+    final double safeW = (w - safePad.left - safePad.right).clamp(1.0, double.infinity);
+
+    // 비율로 영역 배분
+    final double hPad = safeW * 0.05;
+    final double vGap = safeH * 0.02;
+
+    final double headerH   = (safeH * 0.14).clamp(28.0, 46.0);
+    final double artH      = (safeH * 0.44).clamp(60.0, 200.0);
+    final double infoH     = (safeH * 0.20).clamp(36.0, 80.0);
+    final double controlH  = (safeH * 0.18).clamp(32.0, 64.0);
+
+    final double artSize   = (artH * 0.92).clamp(50.0, 180.0);
+
+    final double titleFs   = (infoH * 0.34).clamp(9.0, 15.0);
+    final double artistFs  = (infoH * 0.22).clamp(7.0, 11.0);
+    final double btnSize   = (controlH * 0.55).clamp(18.0, 36.0);
+    final double mainBtnSz = (controlH * 0.75).clamp(26.0, 48.0);
+
+    return Positioned.fill(
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: safePad.top,
+          bottom: safePad.bottom,
+          left: safePad.left,
+          right: safePad.right,
+        ),
+        child: Column(
+          children: [
+
+            // ── ① 상단 헤더: 시간 + 날짜 ─────────────────────────────
+            SizedBox(
+              height: headerH,
+              child: StreamBuilder<DateTime>(
+                stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
+                initialData: DateTime.now(),
+                builder: (context, snap) {
+                  final now = snap.data ?? DateTime.now();
+                  final String hm = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+                  final List<String> weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+                  final String date = '${weekdays[now.weekday - 1]}  ${now.month}.${now.day.toString().padLeft(2, '0')}';
+                  return Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // GLASNYL 로고 (좌측)
+                        Text(
+                          'GLASNYL',
+                          style: TextStyle(
+                            color: _textColor.withValues(alpha: 0.55),
+                            fontSize: (headerH * 0.28).clamp(7.0, 11.0),
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const Spacer(),
+                        // 날짜
+                        Text(
+                          date,
+                          style: TextStyle(
+                            color: _textColor.withValues(alpha: 0.55),
+                            fontSize: (headerH * 0.28).clamp(7.0, 11.0),
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        SizedBox(width: hPad * 0.6),
+                        // 시간
+                        Text(
+                          hm,
+                          style: TextStyle(
+                            color: _textColor.withValues(alpha: 0.90),
+                            fontSize: (headerH * 0.42).clamp(10.0, 16.0),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            SizedBox(height: vGap),
+
+            // ── ② 앨범 아트 (원형 LP + 프로그레스 링) ────────────────
+            SizedBox(
+              height: artH,
+              child: Center(
+                child: GestureDetector(
+                  onLongPress: _handleManualRefresh,
+                  child: AnimatedBuilder(
+                    animation: _lpController,
+                    builder: (context, _) {
+                      return ValueListenableBuilder<Duration>(
+                        valueListenable: _positionNotifier,
+                        builder: (context, pos, _) {
+                          final double prog = (_totalDuration != null &&
+                                  _totalDuration!.inMilliseconds > 0)
+                              ? (pos.inMilliseconds / _totalDuration!.inMilliseconds).clamp(0.0, 1.0)
+                              : 0.0;
+                          return SizedBox(
+                            width: artSize,
+                            height: artSize,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                // LP 디스크
+                                Container(
+                                  width: artSize,
+                                  height: artSize,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _lpColor,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.5),
+                                        blurRadius: 16,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // 회전 앨범 아트
+                                RotationTransition(
+                                  turns: _lpController,
+                                  child: Container(
+                                    width: artSize * 0.56,
+                                    height: artSize * 0.56,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _bgColor,
+                                      image: _albumArtBytes != null
+                                          ? DecorationImage(
+                                              image: MemoryImage(_albumArtBytes!),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                                // 중앙 스핀들
+                                Container(
+                                  width: artSize * 0.08,
+                                  height: artSize * 0.08,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Color(0xFFD4AF37),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black45, blurRadius: 4),
+                                    ],
+                                  ),
+                                ),
+                                // 프로그레스 링
+                                SizedBox(
+                                  width: artSize * 0.93,
+                                  height: artSize * 0.93,
+                                  child: CircularProgressIndicator(
+                                    value: prog,
+                                    strokeWidth: artSize * 0.025,
+                                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      _barColor.withValues(alpha: 0.75),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+            SizedBox(height: vGap),
+
+            // ── ③ 제목 + 가수 + 프로그레스바 ─────────────────────────
+            SizedBox(
+              height: infoH,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // StreamProgressBar 내부 고정 높이 = 40px
+                    // 폰트 높이 근사: fontSize * 1.3 (line height)
+                    const double progressBarH = 40.0;
+                    final double titleLineH  = titleFs * 1.3;
+                    final double artistLineH = artistFs * 1.3;
+                    // 세 요소 합계를 뺀 나머지를 gap 2개로 균등 배분
+                    final double totalFixed = titleLineH + artistLineH + progressBarH;
+                    final double remainH = (infoH - totalFixed).clamp(0.0, double.infinity);
+                    final double gapA = (remainH * 0.35).clamp(0.0, 6.0); // 제목↔가수
+                    final double gapB = (remainH * 0.65).clamp(0.0, 10.0); // 가수↔프로그레스바
+
+                    final double barW = constraints.maxWidth.clamp(1.0, double.infinity);
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // 제목
+                        SizedBox(
+                          height: titleLineH,
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              _currentTitle,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: titleFs,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    offset: const Offset(0, 2),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: gapA),
+                        // 가수
+                        SizedBox(
+                          height: artistLineH,
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              _currentArtist,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.55),
+                                fontSize: artistFs,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 1.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: gapB),
+                        // 프로그레스바 (height: 40 고정)
+                        SizedBox(
+                          height: progressBarH,
+                          width: barW,
+                          child: StreamProgressBar(
+                            barWidth: barW,
+                            bgColor: _bgColor,
+                            barColor: _barColor,
+                            onSeek: (ratio) {
+                              PlayerLogic.seekTo(ratio);
+                              final dur = _totalDuration ?? audioHandler.mediaItem.value?.duration;
+                              if (dur != null && dur.inMilliseconds > 0) {
+                                _positionNotifier.value = Duration(
+                                    milliseconds: (dur.inMilliseconds * ratio).toInt());
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            SizedBox(height: vGap),
+
+            // ── ④ 컨트롤 버튼 + 볼륨 ─────────────────────────────────
+            SizedBox(
+              height: controlH,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 이전곡
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipPrevious();
+                      },
+                      child: Icon(
+                        Icons.skip_previous_rounded,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        size: btnSize,
+                      ),
+                    ),
+                    // 재생/정지
+                    GestureDetector(
+                      onTap: _handleInternalToggle,
+                      child: Container(
+                        width: mainBtnSz,
+                        height: mainBtnSz,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _barColor.withValues(alpha: 0.25),
+                          border: Border.all(
+                            color: _barColor.withValues(alpha: 0.6),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Icon(
+                          _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: mainBtnSz * 0.55,
+                        ),
+                      ),
+                    ),
+                    // 다음곡
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        PlayerLogic.skipNext();
+                      },
+                      child: Icon(
+                        Icons.skip_next_rounded,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        size: btnSize,
+                      ),
+                    ),
+                    // 구분선
+                    Container(
+                      width: 1,
+                      height: controlH * 0.45,
+                      color: Colors.white.withValues(alpha: 0.15),
+                    ),
+                    // 볼륨 아이콘 + 슬라이더 (가로로 컴팩트하게)
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(left: hPad * 0.6),
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: _volumeNotifier,
+                          builder: (context, vol, _) => Row(
+                            children: [
+                              Icon(
+                                vol < 0.05
+                                    ? Icons.volume_off_rounded
+                                    : vol < 0.5
+                                        ? Icons.volume_down_rounded
+                                        : Icons.volume_up_rounded,
+                                color: _barColor,
+                                size: btnSize * 0.7,
+                              ),
+                              SizedBox(width: hPad * 0.4),
+                              Expanded(
+                                child: _GlassVolumeSlider(
+                                  value: vol,
+                                  trackHeight: 5.0,
+                                  thumbRadius: 7.0,
+                                  activeColor: _barColor,
+                                  thumbColor: _playBtnColor,
+                                  bgColor: _bgColor,
+                                  onChanged: (v) async {
+                                    _volumeNotifier.value = v;
+                                    await PlayerLogic.setVolume(v);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1960,9 +2467,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 (config.progressBarWidth + s).clamp(100.0, size.width),
             SizedBox(
               key: _progressKey,
-              width: config.progressBarWidth,
+              width: config.progressBarWidth.clamp(1.0, double.infinity),
               child: StreamProgressBar(
-                barWidth: config.progressBarWidth,
+                barWidth: config.progressBarWidth.clamp(1.0, double.infinity),
                 bgColor: _bgColor,
                 barColor: _barColor,
                 onSeek: (ratio) {
