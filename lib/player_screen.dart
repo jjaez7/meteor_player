@@ -237,6 +237,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     // 3. 🚀 핵심 수정: 화면이 뜬 뒤에 순차적으로 로드
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 최초 실행 시 베타 안내 다이얼로그 표시
+
       // A. 먼저 뮤직 리스너를 등록 (통신 통로 열기)
       _listenToMusic();
 

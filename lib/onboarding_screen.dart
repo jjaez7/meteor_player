@@ -1,9 +1,73 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 
+// ── 페이지 데이터 ──────────────────────────────────────────────
+class _PageData {
+  final String tag;
+  final String headline;
+  final String body;
+  final IconData icon;
+  final Color accent;
+
+  const _PageData({
+    required this.tag,
+    required this.headline,
+    required this.body,
+    required this.icon,
+    required this.accent,
+  });
+}
+
+const List<_PageData> _pages = [
+  _PageData(
+    tag: "GLASNYL  ·  WELCOME",
+    headline: "See\nthe\nMusic.",
+    body: "A glassmorphic vinyl player built around your music. Not just a player — a visual experience.",
+    icon: Icons.auto_awesome_rounded,
+    accent: Color(0xFFD1C4E9),
+  ),
+  _PageData(
+    tag: "01  ·  VINYL ENGINE",
+    headline: "Spin,\nTap,\nFeel.",
+    body: "Tap for lyrics. Double-tap for artwork. Long-press to sync. The vinyl reacts to every beat.",
+    icon: Icons.album_rounded,
+    accent: Color(0xFFB39DDB),
+  ),
+  _PageData(
+    tag: "02  ·  CONTROLS",
+    headline: "Every\nDetail\nYours.",
+    body: "Seek with precision. PiP mode, screen lock, and full playback control — all one gesture away.",
+    icon: Icons.tune_rounded,
+    accent: Color(0xFF9FA8DA),
+  ),
+  _PageData(
+    tag: "03  ·  CUSTOMIZE",
+    headline: "Build\nYour\nCanvas.",
+    body: "Drag and resize every UI element. Your layout, your rules. No two setups are alike.",
+    icon: Icons.dashboard_customize_rounded,
+    accent: Color(0xFFCE93D8),
+  ),
+  _PageData(
+    tag: "04  ·  ADAPTIVE",
+    headline: "Colors\nthat\nBreathe.",
+    body: "The interface extracts your album art palette and repaints itself. Every song looks different.",
+    icon: Icons.palette_rounded,
+    accent: Color(0xFF80CBC4),
+  ),
+  _PageData(
+    tag: "BETA  ·  single-person development",
+    headline: "SEE\nTHE\nMUSIC",
+    body: "It's a beta I make by myself. It can be buggy.\nPlease feel free to let me know if you have any inconvenience — I'll fix it quickly.",
+    icon: Icons.favorite_rounded,
+    accent: Color(0xFFD1C4E9),
+  ),
+];
+
+// ── 메인 위젯 ─────────────────────────────────────────────────
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -11,321 +75,373 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with TickerProviderStateMixin {
   final PageController _controller = PageController();
   int _currentPage = 0;
-  bool isLastPage = false;
 
-  // Glassmorphism Palette
-  final Color accentColor = const Color(0xFFD1C4E9); // 소프트 퍼플
-  final Color glassBaseColor = Colors.white.withValues(alpha: 0.1);
+  late AnimationController _fadeCtrl;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _fadeCtrl.forward();
+  }
 
   @override
   void dispose() {
-    _controller.dispose(); // PageController 메모리 해제
+    _controller.dispose();
+    _fadeCtrl.dispose();
     super.dispose();
+  }
+
+  void _onPageChanged(int index) {
+    _fadeCtrl.forward(from: 0);
+    setState(() => _currentPage = index);
+  }
+
+  Future<void> _handleNext() async {
+    final isLast = _currentPage == _pages.length - 1;
+    if (isLast) {
+      if (Platform.isAndroid) {
+        await [Permission.audio, Permission.storage].request();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isFirstRun', false);
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/main');
+    } else {
+      _controller.nextPage(
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final bool isLandscape = size.width > size.height;
+    final page = _pages[_currentPage];
+    final isLast = _currentPage == _pages.length - 1;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0E0E18),
       body: Stack(
         children: [
-          // [1] 배경: 부드러운 그라데이션 레이어
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          // ── 배경: 페이지 accent색으로 물드는 radial glow ──
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.6, -0.7),
+                radius: 1.2,
                 colors: [
-                  Color(0xFF1E1E2E),
-                  Color(0xFF2D2D44),
-                  Color(0xFF1E1E2E),
+                  page.accent.withValues(alpha: 0.12),
+                  const Color(0xFF0E0E18),
                 ],
               ),
             ),
           ),
 
-          // 장식용 빛의 구체 (소프트 레이어 느낌 극대화)
+          // ── 우하단 보조 글로우 ──
           Positioned(
-            top: -50,
-            right: -50,
-            child: _buildBlurOrb(200, accentColor.withValues(alpha: 0.2)),
+            bottom: -80,
+            right: -80,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 600),
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: page.accent.withValues(alpha: 0.08),
+                    blurRadius: 120,
+                    spreadRadius: 40,
+                  ),
+                ],
+              ),
+            ),
           ),
 
-          // [2] 메인 콘텐츠 (PageView)
-          PageView(
+          // ── PageView ──
+          PageView.builder(
             controller: _controller,
-            onPageChanged: (index) {
-              setState(() {
-                _currentPage = index;
-                isLastPage = index == 4;
-              });
-            },
+            onPageChanged: _onPageChanged,
+            itemCount: _pages.length,
+            itemBuilder: (context, index) => _OnboardingPage(
+              data: _pages[index],
+              fadeAnim: _fadeAnim,
+            ),
+          ),
+
+          // ── 하단 네비게이션 ──
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _BottomNav(
+              currentPage: _currentPage,
+              total: _pages.length,
+              accent: page.accent,
+              isLast: isLast,
+              onNext: _handleNext,
+              onSkip: isLast
+                  ? null
+                  : () => _controller.animateToPage(
+                        _pages.length - 1,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOutCubic,
+                      ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 개별 페이지 ───────────────────────────────────────────────
+class _OnboardingPage extends StatelessWidget {
+  final _PageData data;
+  final Animation<double> fadeAnim;
+
+  const _OnboardingPage({required this.data, required this.fadeAnim});
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
+
+    return FadeTransition(
+      opacity: fadeAnim,
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: topPad + 24,
+          left: 36,
+          right: 36,
+          bottom: 140,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 태그
+            Text(
+              data.tag,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: data.accent.withValues(alpha: 0.7),
+                letterSpacing: 2.5,
+              ),
+            ),
+
+            const Spacer(flex: 2),
+
+            // 아이콘
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: data.accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: data.accent.withValues(alpha: 0.25),
+                  width: 1,
+                ),
+              ),
+              child: Icon(data.icon, color: data.accent, size: 32),
+            ),
+
+            const SizedBox(height: 32),
+
+            // 헤드라인
+            Text(
+              data.headline,
+              style: const TextStyle(
+                fontSize: 56,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                height: 1.0,
+                letterSpacing: -1.5,
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            // 구분선
+            Container(
+              width: 40,
+              height: 2,
+              decoration: BoxDecoration(
+                color: data.accent,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            // 본문
+            Text(
+              data.body,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withValues(alpha: 0.5),
+                height: 1.7,
+                letterSpacing: 0.1,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+
+            const Spacer(flex: 3),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 하단 네비게이션 바 ────────────────────────────────────────
+class _BottomNav extends StatelessWidget {
+  final int currentPage;
+  final int total;
+  final Color accent;
+  final bool isLast;
+  final VoidCallback onNext;
+  final VoidCallback? onSkip;
+
+  const _BottomNav({
+    required this.currentPage,
+    required this.total,
+    required this.accent,
+    required this.isLast,
+    required this.onNext,
+    this.onSkip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(36, 20, 36, 20 + bottomPad),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E0E18).withValues(alpha: 0.6),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.06),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
             children: [
-              _buildGlassPage(
-                index: 0,
-                title: "Welcome to GLASNYL",
-                subtitle: "The Next Era of Music Visuals",
-                description:
-                    "Thank you for choosing GLASNYL OS. Step into a world where glassmorphism aesthetics meets high-fidelity audio engineering.",
-                icon: Icons.auto_awesome_rounded,
-                isLandscape: isLandscape,
+              // 도트 인디케이터
+              Row(
+                children: List.generate(total, (i) {
+                  final isActive = i == currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    margin: const EdgeInsets.only(right: 6),
+                    width: isActive ? 20 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? accent
+                          : Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  );
+                }),
               ),
-              _buildGlassPage(
-                index: 1,
-                title: "Interactive Vinyl",
-                subtitle: "More than just a Rotation",
-                description:
-                    "Tap once for lyrics, twice for artwork, and long-press to refresh. Our Hifi engine synchronizes rotation with your core audio stream.",
-                icon: Icons.album_rounded,
-                isLandscape: isLandscape,
-              ),
-              _buildGlassPage(
-                index: 2,
-                title: "Complete Control",
-                subtitle: "Precision at Your Fingertips",
-                description:
-                    "Drag the progress bar to seek your favorite moments. Access PiP mode and Screen Lock via the left-side drop-down menu.",
-                icon: Icons.settings_input_component_rounded,
-                isLandscape: isLandscape,
-              ),
-              _buildGlassPage(
-                index: 3,
-                title: "Aesthetic Precision", // 또는 "Personalized Canvas"
-                subtitle: "Design Your Own Space",
-                description:
-                    "Beyond a fixed interface. Enter our advanced calibration mode to freely reposition and resize UI modules, crafting your own unique glassmorphic workspace.",
-                icon: Icons
-                    .dashboard_customize_rounded, // 아이콘도 더 적절한 커스터마이즈 아이콘으로 추천
-                isLandscape: isLandscape,
-              ),
-              _buildGlassPage(
-                index: 4,
-                title: "Get Started",
-                subtitle: "Ignite Your Senses",
-                description:
-                    "Experience our color-adaptive UI that breathes with your music. Let the journey begin.",
-                icon: Icons.rocket_launch_rounded,
-                isLandscape: isLandscape,
+
+              const Spacer(),
+
+              // SKIP 버튼
+              if (onSkip != null) ...[
+                GestureDetector(
+                  onTap: onSkip,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "SKIP",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.3),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+              ],
+
+              // NEXT / START 버튼
+              GestureDetector(
+                onTap: onNext,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isLast ? accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isLast
+                          ? Colors.transparent
+                          : accent.withValues(alpha: 0.5),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isLast ? "START" : "NEXT",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: isLast
+                              ? const Color(0xFF0E0E18)
+                              : Colors.white,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isLast
+                            ? Icons.check_rounded
+                            : Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: isLast
+                            ? const Color(0xFF0E0E18)
+                            : Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
-
-          // [3] 하단 네비게이션 (인디케이터 & 버튼)
-          Positioned(
-            bottom: isLandscape ? 30 : 60,
-            left: 30,
-            right: 30,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildCircularIndicator(5),
-                _buildGlassActionButton(
-                  isLastPage ? "START!" : "NEXT",
-                  () async {
-                    if (isLastPage) {
-                      if (Platform.isAndroid) {
-                        // 권한 요청 결과를 Map으로 받아서 처리 (return 생략 방지)
-                        Map<Permission, PermissionStatus> statuses = await [
-                          Permission.audio,
-                          Permission.storage,
-                          // 안드로이드 13 이상을 위해 아래 권한 추가를 권장합니다.
-                          // Permission.nearbyWifiDevices,
-                        ].request();
-
-                        debugPrint("Permissions: $statuses");
-                      }
-
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setBool('isFirstRun', false);
-
-                      if (!mounted) return;
-                      Navigator.pushReplacementNamed(context, '/main');
-                    } else {
-                      _controller.nextPage(
-                        duration: const Duration(milliseconds: 800),
-                        curve: Curves.easeOutQuart,
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- UI Components ---
-
-  Widget _buildGlassPage({
-    required int index,
-    required String title,
-    required String subtitle,
-    required String description,
-    required IconData icon,
-    required bool isLandscape,
-  }) {
-    return Center(
-      child: ClipRRect(
-          borderRadius: BorderRadius.circular(40),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              width: isLandscape
-                  ? MediaQuery.of(context).size.width * 0.8
-                  : MediaQuery.of(context).size.width * 0.85,
-              padding: const EdgeInsets.all(40),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(40),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  width: 1.5,
-                ),
-              ),
-              child: isLandscape
-                  ? Row(
-                      children: [
-                        _buildIconContainer(icon, size: 120),
-                        const SizedBox(width: 40),
-                        Expanded(
-                          child: _buildTextContent(
-                            title,
-                            subtitle,
-                            description,
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildIconContainer(icon),
-                        const SizedBox(height: 40),
-                        _buildTextContent(title, subtitle, description),
-                      ],
-                    ),
-            ),
-          ),
         ),
-    );
-  }
-
-  Widget _buildIconContainer(IconData icon, {double size = 140}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.1),
-        shape: BoxShape.circle,
-        border: Border.all(color: accentColor.withValues(alpha: 0.3)),
-      ),
-      child: Icon(icon, size: size * 0.4, color: Colors.white),
-    );
-  }
-
-  Widget _buildTextContent(String title, String subtitle, String description) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          title.toUpperCase(),
-          style: TextStyle(
-            fontSize: 13,
-            letterSpacing: 4,
-            fontWeight: FontWeight.bold,
-            color: accentColor,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            height: 1.2,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          description,
-          style: TextStyle(
-            fontSize: 15,
-            color: Colors.white.withValues(alpha: 0.6),
-            height: 1.6,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGlassActionButton(String label, Function() onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: accentColor.withValues(alpha: 0.4)),
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCircularIndicator(int count) {
-    return Row(
-      children: List.generate(count, (index) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: _currentPage == index ? 24 : 8,
-          height: 6,
-          decoration: BoxDecoration(
-            color: _currentPage == index
-                ? accentColor
-                : Colors.white.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(10),
-          ),
-        );
-      }),
-    );
-  }
-
-  Widget _buildBlurOrb(double size, Color color) {
-    // BackdropFilter 제거: 단색 배경을 블러해도 시각 효과 없음, 연산만 낭비
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: color, blurRadius: 60, spreadRadius: 20),
-        ],
       ),
     );
   }
