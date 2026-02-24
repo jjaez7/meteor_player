@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'vinyl_component.dart';
@@ -61,36 +62,85 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
   ///   1.0 = 재생(LP 위 착지)
   late AnimationController _tonearmController;
 
+  /// progress 전용 컨트롤러 — value(0.0~1.0)가 곧 바늘 위치
+  /// - 시크: animateTo()로 부드럽게 보간
+  /// - 일반 재생: value = 직접 세팅 (notify → AnimatedBuilder 즉시 리빌드)
+  late AnimationController _progressController;
+
   bool _isScrubbing = false;
   double _scrubStartAngle = 0.0;
   double _scrubProgress = 0.0;
 
+  // ── media_status 채널 직접 구독 (프로그레스바와 동일한 소스)
+  StreamSubscription? _mediaStatusSub;
+  double _lastStreamProgress = 0.0;
+
   @override
   void initState() {
     super.initState();
+
     _tonearmController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
+
+    // value = 현재 progress로 초기화 (0.0~1.0)
+    _progressController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+      value: widget.progress,
+    );
+
     _scrubProgress = widget.progress;
+    _lastStreamProgress = widget.progress;
+
     // 초기 상태: 재생 중이면 착지(1.0), 정지면 대기(0.0)
     _tonearmController.value = widget.isPlaying ? 1.0 : 0.0;
+
+    // ── media_status EventChannel 직접 구독 → 바늘 실시간 이동
+    _mediaStatusSub = const EventChannel('com.glasnyl.app/media_status')
+        .receiveBroadcastStream()
+        .listen((event) {
+      if (_isScrubbing) return;
+      try {
+        final data = Map<String, dynamic>.from(event);
+        final int pos = data['position'] ?? 0;
+        final int dur = data['duration'] ?? 0;
+        if (dur > 0) {
+          final double newP = (pos / dur).clamp(0.0, 1.0);
+          final double diff = (newP - _lastStreamProgress).abs();
+          if (diff > 0.0001) {
+            _lastStreamProgress = newP;
+            if (diff > 0.02) {
+              // 시크: 부드럽게 보간
+              _progressController.animateTo(
+                newP,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+              );
+            } else {
+              // 일반 재생: 즉시 값 세팅 → AnimatedBuilder 리빌드
+              _progressController.value = newP;
+            }
+          }
+        }
+      } catch (_) {}
+    });
   }
 
   @override
   void didUpdateWidget(covariant VinylTurntableView old) {
     super.didUpdateWidget(old);
 
+    // ── 재생/정지 전환: 착지 & 들림 애니메이션
     if (widget.isPlaying != old.isPlaying) {
       if (widget.isPlaying) {
-        // 재생 시작 → LP 위로 착지 (0.0 → 1.0)
         _tonearmController.animateTo(
           1.0,
           duration: const Duration(milliseconds: 700),
           curve: Curves.easeOutCubic,
         );
       } else {
-        // 정지 → LP 바깥으로 올라감 (1.0 → 0.0)
         _tonearmController.animateTo(
           0.0,
           duration: const Duration(milliseconds: 500),
@@ -99,14 +149,26 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
       }
     }
 
+    // ── 시크바 점프: prop으로 큰 변화가 오면 즉시 동기화
     if (!_isScrubbing) {
       _scrubProgress = widget.progress;
+      final double diff = (widget.progress - _progressController.value).abs();
+      if (diff > 0.02) {
+        _lastStreamProgress = widget.progress;
+        _progressController.animateTo(
+          widget.progress,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
   }
 
   @override
   void dispose() {
+    _mediaStatusSub?.cancel();
     _tonearmController.dispose();
+    _progressController.dispose();
     super.dispose();
   }
 
@@ -129,26 +191,28 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // ① 글래스모피즘 플린스 (배경)
-          _buildGlassPlinth(boxW, boxH),
+          // ① 글래스모피즘 플린스 (배경) — 정적이므로 RepaintBoundary로 격리
+          RepaintBoundary(child: _buildGlassPlinth(boxW, boxH)),
 
-          // ② 플래터 (금속 원판)
+          // ② 플래터 (금속 원판) — 정적이므로 RepaintBoundary로 격리
           Positioned(
             left: lpCX - lpSize * 0.54,
             top: lpCY - lpSize * 0.54,
-            child: _buildPlatter(lpSize),
+            child: RepaintBoundary(child: _buildPlatter(lpSize)),
           ),
 
-          // ③ LP 디스크
+          // ③ LP 디스크 — 회전 애니메이션만 이 레이어에 격리
           Positioned(
             left: lpCX - lpSize / 2,
             top: lpCY - lpSize / 2,
+            child: RepaintBoundary(
             child: GestureDetector(
               onPanStart: (d) {
                 _isScrubbing = true;
+                _progressController.stop();
                 _scrubStartAngle = _angleFromCenter(
                     d.localPosition, Offset(lpSize / 2, lpSize / 2));
-                _scrubProgress = widget.progress;
+                _scrubProgress = _progressController.value;
                 HapticFeedback.selectionClick();
               },
               onPanUpdate: (d) {
@@ -166,8 +230,15 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
                 HapticFeedback.selectionClick();
               },
               onPanEnd: (_) {
+                final double seekTarget = _scrubProgress;
+                _lastStreamProgress = seekTarget;
+                _progressController.animateTo(
+                  seekTarget,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                );
                 _isScrubbing = false;
-                widget.onSeek(_scrubProgress);
+                widget.onSeek(seekTarget);
                 HapticFeedback.mediumImpact();
               },
               child: VinylDisk(
@@ -178,39 +249,51 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
                 artist: widget.artist,
               ),
             ),
+            ), // RepaintBoundary (LP 디스크)
           ),
 
-          // ④ 황금 스핀들 캡
+          // ④ 황금 스핀들 캡 — 정적, RepaintBoundary로 격리
           Positioned(
             left: lpCX - 6,
             top: lpCY - 6,
-            child: IgnorePointer(
-              child: Container(
-                width: 12, height: 12,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFFD4AF37),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black45, blurRadius: 4, spreadRadius: 1)
-                  ],
+            child: RepaintBoundary(
+              child: IgnorePointer(
+                child: Container(
+                  width: 12, height: 12,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFD4AF37),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black45, blurRadius: 4, spreadRadius: 1)
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
 
           // ⑤ 톤암 (바늘)
+          // lpController 제거: LP 회전(60fps)마다 톤암이 리빌드되는 문제 해결
+          // RepaintBoundary로 톤암 레이어를 LP 디스크 레이어와 완전 분리
           Positioned(
             right: boxW * 0.06,
             top: lpCY - lpSize * 0.12,
-            child: _TonearmWidget(
-              lpController: widget.lpController,
-              tonearmController: _tonearmController,
-              progress: widget.isPlaying
-                  ? (_isScrubbing ? _scrubProgress : widget.progress)
-                  : 0.0,
-              lpRadius: lpSize / 2,
-              accentColor: widget.accentColor,
-              onTap: widget.onPlayPause,
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_tonearmController, _progressController]),
+                builder: (context, _) {
+                  final double tonearmProgress = _isScrubbing
+                      ? _scrubProgress
+                      : (widget.isPlaying ? _progressController.value : 0.0);
+                  return _TonearmWidget(
+                    tonearmController: _tonearmController,
+                    progress: tonearmProgress,
+                    lpRadius: lpSize / 2,
+                    accentColor: widget.accentColor,
+                    onTap: widget.onPlayPause,
+                  );
+                },
+              ),
             ),
           ),
 
@@ -342,7 +425,7 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
 // progress: 0.0 = LP 외곽 그루브 / 1.0 = LP 중심 그루브
 // ─────────────────────────────────────────────────────────────────────────────
 class _TonearmWidget extends StatelessWidget {
-  final AnimationController lpController;
+  // lpController 제거: LP 회전과 톤암은 독립적인 레이어 — 불필요한 60fps 리빌드 차단
   final AnimationController tonearmController;
   final double progress;
   final double lpRadius;
@@ -350,7 +433,6 @@ class _TonearmWidget extends StatelessWidget {
   final VoidCallback onTap;
 
   const _TonearmWidget({
-    required this.lpController,
     required this.tonearmController,
     required this.progress,
     required this.lpRadius,
@@ -361,7 +443,7 @@ class _TonearmWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([tonearmController, lpController]),
+      animation: tonearmController,
       builder: (context, _) {
         // ── 각도 정의 (단위: radians)
         //
