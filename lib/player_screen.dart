@@ -475,23 +475,45 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         _currentStatus = LyricStatus.loading;
       });
 
+      // Android MediaMetadata가 곡 전환 직후 바로 준비되지 않을 수 있어 딜레이 추가
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+
       await _fetchInitialStatus();
       _updateLyrics({'title': event.title, 'artist': event.content});
       if (mounted) setState(() => _isPlaying = true);
 
-      if (_albumArtBytes != null) {
-        _preBlurAlbumArt(_albumArtBytes!);
-        MusicColorLogic.extractThemeColors(_albumArtBytes!).then((colors) {
-          if (mounted && colors != null) {
-            setState(() {
-              _bgColor = colors['bg']!;
-              _playBtnColor = colors['btn']!;
-              _barColor = colors['bar']!;
-              _textColor = colors['text']!;
-              _artistColor = colors['artist']!;
-            });
+      // 앨범아트를 못 받았으면 800ms 간격으로 최대 3번 재시도
+      if (_albumArtBytes == null || _albumArtBytes!.isEmpty) {
+        for (int i = 0; i < 3; i++) {
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (!mounted) return;
+          try {
+            const platform = MethodChannel('com.glasnyl.app/media_control');
+            final dynamic artResult = await platform.invokeMethod('getAlbumArt');
+            final Uint8List? artData = artResult != null
+                ? Uint8List.fromList(List<int>.from(artResult))
+                : null;
+            if (artData != null && artData.isNotEmpty) {
+              setState(() => _albumArtBytes = artData);
+              _preBlurAlbumArt(artData);
+              MusicColorLogic.extractThemeColors(artData).then((colors) {
+                if (mounted && colors != null) {
+                  setState(() {
+                    _bgColor = colors['bg']!;
+                    _playBtnColor = colors['btn']!;
+                    _barColor = colors['bar']!;
+                    _textColor = colors['text']!;
+                    _artistColor = colors['artist']!;
+                  });
+                }
+              });
+              break; // 성공하면 재시도 중단
+            }
+          } catch (e) {
+            debugPrint('앨범아트 재시도 ${i + 1}회 실패: $e');
           }
-        });
+        }
       }
 
       _lpController.repeat();

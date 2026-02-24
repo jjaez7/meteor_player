@@ -338,13 +338,20 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                 if (currentTitle != cachedAlbumArtTitle) {
                     val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                                ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                    cachedAlbumArt = bitmap?.let {
+                    val newArt = bitmap?.let {
                         val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
                         val stream = ByteArrayOutputStream()
                         scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
                         stream.toByteArray()
-                    } ?: ByteArray(0)
-                    cachedAlbumArtTitle = currentTitle
+                    }
+                    if (newArt != null) {
+                        // 비트맵 수신 성공 시에만 캐시 갱신 — 실패 시 타이틀 업데이트 안 해서 다음 요청 때 재시도 가능
+                        cachedAlbumArt = newArt
+                        cachedAlbumArtTitle = currentTitle
+                    } else {
+                        cachedAlbumArt = ByteArray(0)
+                        // cachedAlbumArtTitle 업데이트 안 함 → 곡 전환 직후 메타데이터 미준비 상태면 재시도
+                    }
                 }
 
                 // Flutter로 보낼 데이터 맵 (앨범아트 제외 — getAlbumArt 메서드로 별도 요청)
