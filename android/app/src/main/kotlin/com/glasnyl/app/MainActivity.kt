@@ -44,6 +44,9 @@ class MainActivity: AudioServiceActivity() {
     private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
     private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
     private val VOLUME_CHANNEL = "com.glasnyl.app/volume_events"
+    // 🚀 앨범아트를 폴링 데이터에서 분리 — SmartClip IPC 버퍼 오버플로우 방지
+    private var cachedAlbumArt: ByteArray = ByteArray(0)
+    private var cachedAlbumArtTitle: String = ""
     private var eventSink: EventChannel.EventSink? = null
     private var volumeEventSink: EventChannel.EventSink? = null
     private var volumeObserver: android.database.ContentObserver? = null
@@ -162,6 +165,10 @@ class MainActivity: AudioServiceActivity() {
                     } else {
                         result.error("VERSION_LOW", "PiP requires Android Oreo or higher", null)
                     }
+                }
+                "getAlbumArt" -> {
+                    // 🚀 앨범아트는 폴링과 분리해 Flutter가 필요할 때만 요청
+                    result.success(cachedAlbumArt)
                 }
                 "requestMetadataRefresh" -> {
                     // 1. 강제로 현재 상태를 읽어옴
@@ -323,25 +330,30 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                 val playbackState = controller.playbackState
                 val metadata = controller.metadata
                 
-                // 앨범 아트 추출 로직
-                val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) 
-                          ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                
-                val albumArtBytes = bitmap?.let {
-                    val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
-                    val stream = ByteArrayOutputStream()
-                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-                    stream.toByteArray()
+
+                val currentTitle = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Unknown"
+
+                // 🚀 앨범아트는 제목 변경 시에만 캐시 갱신 — 폴링 데이터에 포함 안 함
+                // SmartClip이 캡처 시 IPC로 대용량 데이터를 가져가며 버퍼 오버플로우 발생하던 문제 해결
+                if (currentTitle != cachedAlbumArtTitle) {
+                    val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                               ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    cachedAlbumArt = bitmap?.let {
+                        val scaledBitmap = Bitmap.createScaledBitmap(it, 300, 300, true)
+                        val stream = ByteArrayOutputStream()
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                        stream.toByteArray()
+                    } ?: ByteArray(0)
+                    cachedAlbumArtTitle = currentTitle
                 }
 
-                // Flutter로 보낼 데이터 맵 구성
+                // Flutter로 보낼 데이터 맵 (앨범아트 제외 — getAlbumArt 메서드로 별도 요청)
                 mutableMapOf<String, Any>(
                     "position" to (playbackState?.position ?: 0L),
                     "duration" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
                     "isPlaying" to (playbackState?.state == PlaybackState.STATE_PLAYING),
-                    "title" to (metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Unknown"),
-                    "artist" to (metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "Unknown Artist"),
-                    "albumArt" to (albumArtBytes ?: ByteArray(0))
+                    "title" to currentTitle,
+                    "artist" to (metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "Unknown Artist")
                 )
             } else {
                 // 활성화된 세션이 없을 때 기본값
@@ -351,7 +363,6 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                     "isPlaying" to false,
                     "title" to "Ready to Play",
                     "artist" to "GLASNYL",
-                    "albumArt" to ByteArray(0)
                 )
             }
         } catch (e: Exception) { 

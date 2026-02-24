@@ -26,6 +26,7 @@ class VinylTurntableView extends StatefulWidget {
   final String artist;
   final bool isPlaying;
   final double progress;       // 0.0 ~ 1.0
+  final Stream<double>? progressStream; // player_screen에서 단일 구독 후 분배
   final VoidCallback onPlayPause;
   final VoidCallback onNext;
   final VoidCallback onPrevious;
@@ -42,6 +43,7 @@ class VinylTurntableView extends StatefulWidget {
     required this.artist,
     required this.isPlaying,
     required this.progress,
+    this.progressStream,
     required this.onPlayPause,
     required this.onNext,
     required this.onPrevious,
@@ -71,9 +73,12 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
   double _scrubStartAngle = 0.0;
   double _scrubProgress = 0.0;
 
-  // ── media_status 채널 직접 구독 (프로그레스바와 동일한 소스)
+  // ── progressStream 구독 (player_screen에서 단일 구독 후 분배받음)
   StreamSubscription? _mediaStatusSub;
   double _lastStreamProgress = 0.0;
+
+  // ── Haptic throttle (onPanUpdate 매 이벤트 → 80ms 제한)
+  DateTime? _lastHaptic;
 
   @override
   void initState() {
@@ -97,35 +102,26 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
     // 초기 상태: 재생 중이면 착지(1.0), 정지면 대기(0.0)
     _tonearmController.value = widget.isPlaying ? 1.0 : 0.0;
 
-    // ── media_status EventChannel 직접 구독 → 바늘 실시간 이동
-    _mediaStatusSub = const EventChannel('com.glasnyl.app/media_status')
-        .receiveBroadcastStream()
-        .listen((event) {
-      if (_isScrubbing) return;
-      try {
-        final data = Map<String, dynamic>.from(event);
-        final int pos = data['position'] ?? 0;
-        final int dur = data['duration'] ?? 0;
-        if (dur > 0) {
-          final double newP = (pos / dur).clamp(0.0, 1.0);
-          final double diff = (newP - _lastStreamProgress).abs();
-          if (diff > 0.0001) {
-            _lastStreamProgress = newP;
-            if (diff > 0.02) {
-              // 시크: 부드럽게 보간
-              _progressController.animateTo(
-                newP,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-              );
-            } else {
-              // 일반 재생: 즉시 값 세팅 → AnimatedBuilder 리빌드
-              _progressController.value = newP;
-            }
+    // ── progressStream 구독 (EventChannel 직접 구독 제거 → 이중 구독 해소)
+    // player_screen의 단일 media_status 구독에서 분배받음
+    if (widget.progressStream != null) {
+      _mediaStatusSub = widget.progressStream!.listen((newP) {
+        if (_isScrubbing) return;
+        final double diff = (newP - _lastStreamProgress).abs();
+        if (diff > 0.0001) {
+          _lastStreamProgress = newP;
+          if (diff > 0.02) {
+            _progressController.animateTo(
+              newP,
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
+            );
+          } else {
+            _progressController.value = newP;
           }
         }
-      } catch (_) {}
-    });
+      });
+    }
   }
 
   @override
@@ -227,7 +223,14 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
                           .clamp(0.0, 1.0);
                 });
                 _scrubStartAngle = a;
-                HapticFeedback.selectionClick();
+                // Haptic throttle: 80ms 이내 중복 진동 방지
+                final now = DateTime.now();
+                if (_lastHaptic == null ||
+                    now.difference(_lastHaptic!) >
+                        const Duration(milliseconds: 80)) {
+                  HapticFeedback.selectionClick();
+                  _lastHaptic = now;
+                }
               },
               onPanEnd: (_) {
                 final double seekTarget = _scrubProgress;

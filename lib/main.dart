@@ -85,7 +85,8 @@ class MyAudioHandler extends BaseAudioHandler {
   /// Android가 IME Input Channel을 재구성하는 800ms 동안 EventChannel 신호를 무시.
   void suppressForResume() {
     _isSuppressed = true;
-    Future.delayed(const Duration(milliseconds: 800), () {
+    // 🚀 캡처/PiP 포함 Surface 재구성에 충분한 여유 시간 (1200ms)
+    Future.delayed(const Duration(milliseconds: 1200), () {
       _isSuppressed = false;
     });
   }
