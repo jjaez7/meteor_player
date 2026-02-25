@@ -793,13 +793,20 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // 가로 모드 전체화면 통합 레이아웃
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildLandscapeFullLayout(Size size, PlayerConfig config) {
-    final double topPad = MediaQuery.of(context).padding.top + 48.0;
-    final double botPad = MediaQuery.of(context).padding.bottom + 8.0;
-    final double hPad = size.width * 0.018;
+    final EdgeInsets sysPad = MediaQuery.of(context).padding;
+    final double topPad  = sysPad.top    + 48.0;
+    final double botPad  = sysPad.bottom +  8.0;
+    // 카메라(left) · 네비게이션 바(right) 인셋을 콘텐츠 여백에 추가
+    // → 배경 블러는 Positioned.fill이라 영향 없음, 콘텐츠만 안전 영역 안으로
+    final double hPadLeft  = size.width * 0.018 + sysPad.left;
+    final double hPadRight = size.width * 0.018 + sysPad.right;
+    final double hPad      = size.width * 0.018; // Row 내부 gap 등 중립 간격용
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
 
-    final double panelW = size.width * 0.35;
-    final double lpW = (size.width - panelW - hPad * 3).clamp(0.0, double.infinity);
+    // LP + 패널 너비는 좌우 인셋을 제외한 실제 사용 가능 너비 기준으로 계산
+    final double usableW = (size.width - hPadLeft - hPadRight).clamp(0.0, double.infinity);
+    final double panelW  = usableW * 0.35;
+    final double lpW     = (usableW - panelW - hPad).clamp(0.0, double.infinity);
 
     final double turntableSizeByW = lpW;
     final double turntableSizeByH = available > 0 ? available / 0.72 : lpW;
@@ -820,7 +827,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     return Positioned.fill(
       child: Padding(
-        padding: EdgeInsets.only(top: topPad, bottom: botPad, left: hPad, right: hPad),
+        padding: EdgeInsets.only(top: topPad, bottom: botPad, left: hPadLeft, right: hPadRight),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1354,10 +1361,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   Widget _buildPortraitFullLayout(Size size, PlayerConfig config) {
-    final double topPad = MediaQuery.of(context).padding.top + 52.0;
-    final double botPad = MediaQuery.of(context).padding.bottom + 12.0;
+    final EdgeInsets sysPad = MediaQuery.of(context).padding;
+    final double topPad  = sysPad.top    + 52.0;
+    final double botPad  = sysPad.bottom + 12.0;
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
-    final double hPad = size.width * 0.04;
+    // 세로 모드는 보통 left/right 인셋이 0이지만, 폴더블 등 예외 기기를 위해 반영
+    final double hPad = size.width * 0.04 + (sysPad.left + sysPad.right) / 2;
 
     final double gap         = hPad * 0.5;
 

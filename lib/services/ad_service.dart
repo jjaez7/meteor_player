@@ -210,7 +210,7 @@ class AdService {
   static Future<DateTime?> getPassExpiryTime() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_lifetimeKey) ?? false) return DateTime.now().add(const Duration(days: 365));
+      if (prefs.getBool(_lifetimeKey) ?? false) return null; // null = Lifetime (UI에서 별도 처리)
 
       String? installTimeStr = prefs.getString(_installTimeKey);
       // 🔥 무료 체험 만료: 1시간(60분) 뒤
