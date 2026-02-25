@@ -746,7 +746,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   Positioned(
                     top: 0, left: 0, right: 0,
                     child: RepaintBoundary(
-                      child: SafeArea(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          top: (MediaQuery.of(context).padding.top - 8.0).clamp(0.0, double.infinity),
+                          left: MediaQuery.of(context).padding.left,
+                          right: MediaQuery.of(context).padding.right,
+                        ),
                         child: PlayerAppBar(
                           onPassUpdated: () => setState(() {}),
                           isPip: _isPipMode,
@@ -788,7 +793,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // 가로 모드 전체화면 통합 레이아웃
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildLandscapeFullLayout(Size size, PlayerConfig config) {
-    final double topPad = MediaQuery.of(context).padding.top + 56.0;
+    final double topPad = MediaQuery.of(context).padding.top + 48.0;
     final double botPad = MediaQuery.of(context).padding.bottom + 8.0;
     final double hPad = size.width * 0.018;
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
@@ -805,8 +810,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double lpH = turntableSize * 0.72;
     final double volumePanelH = (available - lpH).clamp(0.0, double.infinity);
 
-    final double titleFs   = (panelW * 0.13).clamp(13.0, 36.0);
-    final double artistFs  = (panelW * 0.075).clamp(10.0, 22.0);
+    final double titleFs   = (panelW * 0.13).clamp(7.0, 36.0);
+    final double artistFs  = (panelW * 0.075).clamp(5.0, 22.0);
     final double itemGap   = (available * 0.025).clamp(0.0, 18.0);
     final double bigGap    = (available * 0.045).clamp(0.0, 28.0);
     final double vPad      = (available * 0.04).clamp(0.0, 20.0);
@@ -935,7 +940,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final double clockH = (panelW * 0.14).clamp(16.0, 28.0) + 20.0;
-                  final bool showLandscapeClock = constraints.maxHeight > clockH + 80;
+                  final bool showLandscapeClock = constraints.maxHeight > clockH + 290;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1349,14 +1354,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   Widget _buildPortraitFullLayout(Size size, PlayerConfig config) {
-    final double topPad = MediaQuery.of(context).padding.top + 60.0;
+    final double topPad = MediaQuery.of(context).padding.top + 52.0;
     final double botPad = MediaQuery.of(context).padding.bottom + 12.0;
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
     final double hPad = size.width * 0.04;
 
     final double gap         = hPad * 0.5;
 
-    final bool showPortraitClock = available >= 400.0;
+    final bool showPortraitClock = available >= 450.0;
     final double clockPanelH = showPortraitClock
         ? (available * 0.07).clamp(0.0, 64.0)
         : 0.0;
@@ -1526,8 +1531,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08)).clamp(1.0, double.infinity);
     final double vPad = (verticalPad ?? (safeH * 0.05)).clamp(0.0, 16.0);
 
-    final double titleFs  = titleFontSize  ?? (safeH * 0.10).clamp(13.0, 28.0);
-    final double artistFs = artistFontSize ?? (safeH * 0.065).clamp(10.0, 16.0);
+    final double titleFs  = titleFontSize  ?? (safeH * 0.10).clamp(7.0, 28.0);
+    final double artistFs = artistFontSize ?? (safeH * 0.065).clamp(5.0, 16.0);
 
     final double gap1 = (itemGap ?? (safeH * 0.03)).clamp(2.0, 8.0);
     final double gap2 = (bigGap  ?? (safeH * 0.05)).clamp(4.0, 14.0);

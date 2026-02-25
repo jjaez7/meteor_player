@@ -49,9 +49,18 @@ class PlayerAppBar extends StatelessWidget {
     // 🚀 글래스모피즘 스타일 적용 (배경 투명도 및 테두리 강조)
     final glassColor = bgColor.withValues(alpha: 0.85); // 조금 더 불투명하게 조정하여 가독성 확보
 
+    // 가로모드에서 카메라 펀치홀·네비게이션 바 인셋을 패딩으로 수용
+    // → 시스템 UI 영역까지 배경이 자연스럽게 뻗고, 버튼은 안전 영역 안에 배치
+    final EdgeInsets sysPad = MediaQuery.of(context).padding;
+    final double extraLeft  = sysPad.left;
+    final double extraRight = sysPad.right;
+
     return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: EdgeInsets.only(
+        left:  10 + extraLeft,
+        right: 10 + extraRight,
+      ),
       child: Stack(
         children: [
           // [좌측] 메뉴 버튼
