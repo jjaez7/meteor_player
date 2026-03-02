@@ -27,6 +27,8 @@ import 'services/lyrics_service.dart';
 import 'models/lyric_model.dart';
 import 'services/ad_service.dart';
 import 'menu/dialog_pass.dart';
+// 🎸 콘서트 효과 임포트
+import 'concert_effects.dart';
 
 Timer? _accessCheckTimer;
 bool _isPassDialogShowing = false;
@@ -44,6 +46,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   bool _showLyrics = false;
   bool _isPipMode = false;
   bool _isScreenLocked = false;
+
+  // 🎸 콘서트 모드
+  bool _isConcertMode = false;
+  final _concertKey = GlobalKey<ConcertLayerState>();
 
   // ── 가로 모드 하단 패널 토글 (볼륨 ↔ 가사), 기본: 볼륨
   bool _landscapeShowLyrics = false;
@@ -67,7 +73,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // ── 컨트롤러
   late AnimationController _lpController;
-  late AnimationController _needleController; // 가사/미니멀 모드용
+  late AnimationController _needleController;
 
   // ── 레이아웃 (가로 모드 / PiP 용)
   PlayerConfig? _portraitConfig, _landscapeConfig;
@@ -78,7 +84,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Uint8List? _albumArtBytes;
   DateTime? _lastSyncTime;
 
-  // ── 사전 블러 처리된 배경 이미지 (BackdropFilter 대체 — 곡 전환 시 1회만 계산)
+  // ── 사전 블러 처리된 배경 이미지
   Uint8List? _blurredBgBytes;
 
   // ── 가사
@@ -87,14 +93,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   String _lastFetchedSongId = "";
   int _lastRequestToken = 0;
 
-  // ── 재생 위치 (ValueNotifier: setState 없이 가사 & 진행률 동기화)
+  // ── 재생 위치
   final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
 
-  // ── 턴테이블 progress 분배 (media_status 단일 구독 → 여기서 분배)
+  // ── 턴테이블 progress 분배
   final StreamController<double> _turntableProgressCtrl =
       StreamController<double>.broadcast();
 
-  // ── 색상 (앨범 아트에서 추출, 저장값 로드)
+  // ── 색상
   Color _bgColor = const Color(0xFFE1E0E5);
   Color _lpColor = const Color(0xFF2A292E);
   Color _textColor = const Color(0xFF333335);
@@ -107,12 +113,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   static const _volumeChannel = EventChannel('com.glasnyl.app/volume_events');
   final GlobalKey _progressKey = GlobalKey();
 
-  // ── 스트림 구독 (dispose에서 반드시 cancel)
+  // ── 스트림 구독
   StreamSubscription? _mediaStatusSub;
   StreamSubscription? _notificationSub;
   StreamSubscription? _volumeSub;
 
-  // ── 접근 가드 캐시 (isFullAccess 결과를 30초간 재사용 → CPU wake-up 감소)
+  // ── 접근 가드 캐시
   bool? _cachedAccessResult;
   DateTime? _lastAccessCheck;
 
@@ -125,7 +131,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // PiP 채널
     _pipChannel.setMethodCallHandler((call) async {
       switch (call.method) {
         case "onPipModeChanged":
@@ -147,18 +152,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     WakelockPlus.enable();
 
-    // 애니메이션 컨트롤러
     _lpController = AnimationController(
       vsync: this, duration: const Duration(seconds: 20));
     _needleController = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1000));
 
-    // 재생 위치
     audioHandler.position.listen((pos) {
       if (mounted) _positionNotifier.value = pos;
     });
 
-    // 곡 변경
     audioHandler.mediaItem.listen((item) {
       if (item != null && mounted && _currentTitle != item.title) {
         _positionNotifier.value = Duration.zero;
@@ -170,10 +172,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           _currentStatus = LyricStatus.loading;
         });
         _updateLyrics(item);
+        // 🎸 곡 전환 시 콘서트 효과 발동
+        if (_isConcertMode) {
+          _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
+        }
       }
     });
 
-    // 재생 상태
     audioHandler.playbackState.listen((state) {
       if (!mounted) return;
       if (state.playing) {
@@ -198,7 +203,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _loadSavedColors();
     _loadInitialVolume();
 
-    // 기기 볼륨 버튼 실시간 감지 (하드웨어 버튼 → _volumeNotifier 즉시 반영)
     _volumeSub = _volumeChannel.receiveBroadcastStream().listen((dynamic value) {
       if (mounted && value != null) {
         _volumeNotifier.value =
@@ -243,7 +247,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _fetchInitialStatus();
         });
-        // 가사 패널이 열려있으면 포지션도 즉시 동기화
         if (_landscapeShowLyrics || _portraitShowLyrics) {
           Future.delayed(const Duration(milliseconds: 300), () {
             if (mounted) _syncLyricsPosition();
@@ -254,7 +257,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // 접근 가드 (광고/패스)
+  // 접근 가드
   // ──────────────────────────────────────────────────────────────────────
   void _startAccessGuardian() {
     _accessCheckTimer?.cancel();
@@ -284,6 +287,20 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         });
       }
     });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 🎸 콘서트 모드 토글
+  // ──────────────────────────────────────────────────────────────────────
+  void _handleConcertModeToggle() {
+    setState(() => _isConcertMode = !_isConcertMode);
+    if (_isConcertMode) {
+      HapticFeedback.mediumImpact();
+      // 콘서트 모드 진입 시 스트로브 + 파티클 발동
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
+      });
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -371,7 +388,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // 수동 새로고침 (LP 롱프레스)
+  // 수동 새로고침
   // ──────────────────────────────────────────────────────────────────────
   void _handleManualRefresh() async {
     final now = DateTime.now();
@@ -475,7 +492,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         _currentStatus = LyricStatus.loading;
       });
 
-      // Android MediaMetadata가 곡 전환 직후 바로 준비되지 않을 수 있어 딜레이 추가
       await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
@@ -483,7 +499,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       _updateLyrics({'title': event.title, 'artist': event.content});
       if (mounted) setState(() => _isPlaying = true);
 
-      // 앨범아트를 못 받았으면 800ms 간격으로 최대 3번 재시도
+      // 🎸 알림으로 곡 전환 시 콘서트 효과 발동
+      if (_isConcertMode) {
+        _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
+      }
+
       if (_albumArtBytes == null || _albumArtBytes!.isEmpty) {
         for (int i = 0; i < 3; i++) {
           await Future.delayed(const Duration(milliseconds: 800));
@@ -508,7 +528,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   });
                 }
               });
-              break; // 성공하면 재시도 중단
+              break;
             }
           } catch (e) {
             debugPrint('앨범아트 재시도 ${i + 1}회 실패: $e');
@@ -742,6 +762,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 else
                   _buildLegacyLayout(size, config, isPortrait, isSpecialMode),
 
+                // 🎸 콘서트 레이어 (잠금 화면 및 PiP 제외)
+                if (_isConcertMode && !_isPipMode && !_isScreenLocked)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ConcertLayer(
+                        key: _concertKey,
+                        isPlaying: _isPlaying,
+                        accentColor: _barColor,
+                      ),
+                    ),
+                  ),
+
                 if (!_isPipMode)
                   Positioned(
                     top: 0, left: 0, right: 0,
@@ -770,6 +802,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               setState(() => isEditMode = v),
                           onLockToggle: () =>
                               setState(() => _isScreenLocked = true),
+                          // 🎸 콘서트 모드 콜백 전달
+                          onConcertModeToggled: _handleConcertModeToggle,
+                          isConcertMode: _isConcertMode,
                         ),
                       ),
                     ),
@@ -796,14 +831,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final EdgeInsets sysPad = MediaQuery.of(context).padding;
     final double topPad  = sysPad.top    + 48.0;
     final double botPad  = sysPad.bottom +  8.0;
-    // 카메라(left) · 네비게이션 바(right) 인셋을 콘텐츠 여백에 추가
-    // → 배경 블러는 Positioned.fill이라 영향 없음, 콘텐츠만 안전 영역 안으로
     final double hPadLeft  = size.width * 0.018 + sysPad.left;
     final double hPadRight = size.width * 0.018 + sysPad.right;
-    final double hPad      = size.width * 0.018; // Row 내부 gap 등 중립 간격용
+    final double hPad      = size.width * 0.018;
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
 
-    // LP + 패널 너비는 좌우 인셋을 제외한 실제 사용 가능 너비 기준으로 계산
     final double usableW = (size.width - hPadLeft - hPadRight).clamp(0.0, double.infinity);
     final double panelW  = usableW * 0.35;
     final double lpW     = (usableW - panelW - hPad).clamp(0.0, double.infinity);
@@ -1365,7 +1397,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double topPad  = sysPad.top    + 52.0;
     final double botPad  = sysPad.bottom + 12.0;
     final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
-    // 세로 모드는 보통 left/right 인셋이 0이지만, 폴더블 등 예외 기기를 위해 반영
     final double hPad = size.width * 0.04 + (sysPad.left + sysPad.right) / 2;
 
     final double gap         = hPad * 0.5;
@@ -1899,7 +1930,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // 갤럭시 플립 커버스크린 전용 레이아웃  ← FIXED
+  // 갤럭시 플립 커버스크린 전용 레이아웃
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildFlipCoverLayout(Size size) {
     final double w = size.width;
@@ -1912,9 +1943,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double hPad = safeW * 0.05;
     final double vGap = safeH * 0.02;
 
-    // ── FIX 1: Compute raw section heights ──────────────────────────────
-    // Each section has a desired height; we then scale all of them down
-    // proportionally if their sum (+ gaps) exceeds safeH, preventing overflow.
     final double rawHeaderH  = (safeH * 0.13).clamp(28.0, 46.0);
     final double rawArtH     = (safeH * 0.42).clamp(60.0, 200.0);
     final double rawInfoH    = (safeH * 0.20).clamp(36.0, 80.0);
@@ -1923,8 +1951,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     final double rawTotal = rawHeaderH + rawArtH + rawInfoH + rawControlH + totalGaps;
 
-    // Scale factor: if rawTotal > safeH shrink sections proportionally.
-    // Gaps are NOT scaled — only section heights.
     final double sectionBudget = (safeH - totalGaps).clamp(1.0, double.infinity);
     final double rawSections   = rawHeaderH + rawArtH + rawInfoH + rawControlH;
     final double scale         = rawTotal > safeH
@@ -1935,7 +1961,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double artH     = rawArtH     * scale;
     final double infoH    = rawInfoH    * scale;
     final double controlH = rawControlH * scale;
-    // ────────────────────────────────────────────────────────────────────
 
     final double artSize   = (artH * 0.92).clamp(50.0, 180.0);
 
@@ -1952,14 +1977,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           left: safePad.left,
           right: safePad.right,
         ),
-        // ── FIX 2: Wrap Column in ClipRect so any residual pixel rounding
-        // overflow is silently clipped rather than triggering a RenderFlex error.
         child: ClipRect(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
 
-              // ── ① 상단 헤더: 시간 + 날짜 ─────────────────────────────
               SizedBox(
                 height: headerH,
                 child: StreamBuilder<DateTime>(
@@ -2013,7 +2035,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
               SizedBox(height: vGap),
 
-              // ── ② 앨범 아트 (원형 LP + 프로그레스 링) ────────────────
               SizedBox(
                 height: artH,
                 child: Center(
@@ -2103,12 +2124,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
               SizedBox(height: vGap),
 
-              // ── ③ 제목 + 가수 + 프로그레스바 ─────────────────────────
-              // FIX 3: Replaced LayoutBuilder + nested Column with a simpler
-              // structure that does NOT use LayoutBuilder inside a bounded
-              // SizedBox — this was causing the MultiChildLayoutDelegate crash
-              // when Flutter tried to lay out StreamProgressBar in a context
-              // where the parent constraints were being recalculated.
               SizedBox(
                 height: infoH,
                 child: Padding(
@@ -2125,7 +2140,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
               SizedBox(height: vGap),
 
-              // ── ④ 컨트롤 버튼 + 볼륨 ─────────────────────────────────
               SizedBox(
                 height: controlH,
                 child: Padding(
@@ -2228,12 +2242,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     );
   }
 
-  // ── FIX 3 helper: info section extracted to its own method ──────────
-  // Previously this was an inline LayoutBuilder that read constraints.maxWidth
-  // inside a StreamBuilder closure — a pattern that can produce degenerate
-  // constraints when the parent Column is being reflowed.
-  // Now the width is passed in explicitly, matching how every other section
-  // in this file computes its dimensions.
   Widget _buildFlipCoverInfoSection({
     required double infoH,
     required double titleFs,
@@ -2241,10 +2249,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     required double safeW,
     required double hPad,
   }) {
-    // Bar width = safeW minus the symmetric hPad applied by the parent Padding.
     final double barW = (safeW - hPad * 2).clamp(1.0, double.infinity);
 
-    // Recompute gaps without LayoutBuilder (same math, just explicit).
     const double progressBarH = 40.0;
     final double titleLineH   = titleFs * 1.3;
     final double artistLineH  = artistFs * 1.3;
@@ -2258,7 +2264,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // 제목
         SizedBox(
           height: titleLineH,
           child: Align(
@@ -2285,7 +2290,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
         ),
         SizedBox(height: gapA),
-        // 가수
         SizedBox(
           height: artistLineH,
           child: Align(
@@ -2305,7 +2309,6 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
         ),
         SizedBox(height: gapB),
-        // 프로그레스바 — explicit width, no LayoutBuilder needed
         SizedBox(
           height: progressBarH,
           width: barW,

@@ -18,7 +18,11 @@ class PlayerAppBar extends StatelessWidget {
   final Color playBtnColor;
   final Function(Color, String) onColorChanged;
   final VoidCallback onResetColors;
-  final VoidCallback onPassUpdated; 
+  final VoidCallback onPassUpdated;
+
+  // 🎸 콘서트 모드 토글 콜백
+  final VoidCallback onConcertModeToggled;
+  final bool isConcertMode;
 
   const PlayerAppBar({
     super.key,
@@ -37,6 +41,8 @@ class PlayerAppBar extends StatelessWidget {
     required this.onResetColors,
     required this.onLockToggle,
     required this.onPassUpdated,
+    required this.onConcertModeToggled,
+    this.isConcertMode = false,
   });
 
   @override
@@ -46,11 +52,8 @@ class PlayerAppBar extends StatelessWidget {
 
     if (isPip || isFlipCover) return const SizedBox.shrink();
 
-    // 🚀 글래스모피즘 스타일 적용 (배경 투명도 및 테두리 강조)
-    final glassColor = bgColor.withValues(alpha: 0.85); // 조금 더 불투명하게 조정하여 가독성 확보
+    final glassColor = bgColor.withValues(alpha: 0.85);
 
-    // 가로모드에서 카메라 펀치홀·네비게이션 바 인셋을 패딩으로 수용
-    // → 시스템 UI 영역까지 배경이 자연스럽게 뻗고, 버튼은 안전 영역 안에 배치
     final EdgeInsets sysPad = MediaQuery.of(context).padding;
     final double extraLeft  = sysPad.left;
     final double extraRight = sysPad.right;
@@ -68,27 +71,34 @@ class PlayerAppBar extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: PopupMenuButton<String>(
               color: glassColor,
-              elevation: 8, // 글래스 레이어감을 위해 그림자 살짝 추가
-              offset: const Offset(0, 50), // 버튼 아래로 띄우기
+              elevation: 8,
+              offset: const Offset(0, 50),
               constraints: const BoxConstraints(minWidth: 160),
               shape: RoundedRectangleBorder(
-                // 🚀 테두리를 밝게 하여 유리 광택 느낌 부여
                 side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
                 borderRadius: BorderRadius.circular(22),
               ),
               icon: Icon(Icons.expand_more_rounded, size: 32, color: textColor),
               onSelected: (val) => LeftMenuActions.handleLeftMenuClick(
-                context: context, 
+                context: context,
                 value: val,
                 onLockEnabled: onLockToggle,
+                onConcertModeToggled: onConcertModeToggled,
               ),
               itemBuilder: (context) => [
                 _menuItem("PiP Mode", Icons.picture_in_picture_alt_rounded, "pip"),
                 _menuItem("Screen Lock", Icons.lock_outline_rounded, "lock"),
+                // 🎸 콘서트 모드 메뉴 항목
+                _menuItem(
+                  isConcertMode ? "Exit Concert" : "Concert Mode",
+                  isConcertMode ? Icons.close_rounded : Icons.celebration_rounded,
+                  "concert",
+                  isHighlight: !isConcertMode,
+                ),
               ],
             ),
           ),
-          
+
           // [중앙] 로고
           Align(
             alignment: Alignment.center,
@@ -96,7 +106,7 @@ class PlayerAppBar extends StatelessWidget {
               "GLASNYL",
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                letterSpacing: 4, // 간격을 넓혀 고급스러움 강조
+                letterSpacing: 4,
                 fontSize: 13,
                 color: textColor.withValues(alpha: 0.9),
                 shadows: [
@@ -117,7 +127,7 @@ class PlayerAppBar extends StatelessWidget {
                     icon: const Icon(Icons.refresh_rounded, color: Colors.redAccent),
                     onPressed: onResetLayout,
                   ),
-                
+
                 PopupMenuButton<String>(
                   color: glassColor,
                   elevation: 10,
@@ -145,10 +155,8 @@ class PlayerAppBar extends StatelessWidget {
                     onPassUpdated: onPassUpdated,
                   ),
                   itemBuilder: (context) => [
-                    // 🚀 프리패스 메뉴 강조 (Amber 색상 아이콘)
                     _menuItem("GLASNYL PASS", Icons.bolt_rounded, "pass", isHighlight: true),
                     const PopupMenuDivider(height: 1),
-                    
                     _menuItem("Theme Settings", Icons.palette_outlined, "settings"),
                     _menuItem(
                       isEditMode ? "Finish Layout" : "Edit Layout",
@@ -169,7 +177,6 @@ class PlayerAppBar extends StatelessWidget {
     );
   }
 
-  // 🚀 수정된 메뉴 아이템 빌더
   PopupMenuItem<String> _menuItem(String title, IconData icon, String value, {bool isHighlight = false}) {
     return PopupMenuItem<String>(
       value: value,
@@ -178,23 +185,22 @@ class PlayerAppBar extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              // 하이라이트 메뉴는 색상을 다르게
-              color: isHighlight 
-                  ? Colors.amber.withValues(alpha: 0.2) 
+              color: isHighlight
+                  ? Colors.amber.withValues(alpha: 0.2)
                   : textColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              icon, 
-              color: isHighlight ? Colors.amber : textColor.withValues(alpha: 0.8), 
+              icon,
+              color: isHighlight ? Colors.amber : textColor.withValues(alpha: 0.8),
               size: 18
             ),
           ),
           const SizedBox(width: 14),
           Text(
-            title, 
+            title,
             style: TextStyle(
-              color: isHighlight ? Colors.amber : textColor, 
+              color: isHighlight ? Colors.amber : textColor,
               fontWeight: isHighlight ? FontWeight.w800 : FontWeight.w600,
               fontSize: 13,
             )

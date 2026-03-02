@@ -5,16 +5,23 @@ class LeftMenuActions {
   static void handleLeftMenuClick({
     required BuildContext context,
     required String value,
-    required VoidCallback onLockEnabled, // 잠금 활성화를 위한 콜백 추가
+    required VoidCallback onLockEnabled,
+    required VoidCallback onConcertModeToggled, // 콘서트 모드 토글 콜백 추가
   }) {
     if (value == "pip") {
       PipHandler.enterPipMode();
       if (Navigator.canPop(context)) Navigator.pop(context);
-    } 
-    
-    // 🚀 화면 잠금 액션 추가
+    }
+
+    // 화면 잠금 액션
     else if (value == "lock") {
-      onLockEnabled(); // 메인 화면의 _isScreenLocked를 true로 바꿈
+      onLockEnabled();
+      if (Navigator.canPop(context)) Navigator.pop(context);
+    }
+
+    // 🎸 콘서트 모드 토글
+    else if (value == "concert") {
+      onConcertModeToggled();
       if (Navigator.canPop(context)) Navigator.pop(context);
     }
   }
