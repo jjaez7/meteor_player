@@ -70,8 +70,8 @@ class AdService {
       final String? lastWatch = prefs.getString(_adKey);
       if (lastWatch != null) {
         final lastWatchDate = DateTime.tryParse(lastWatch);
-        // 🔥 광고 혜택: 3분 -> 3시간으로 수정
-        if (lastWatchDate != null && DateTime.now().difference(lastWatchDate).inHours < 3) {
+        // 🔥 광고 혜택: 3시간 -> 9시간으로 수정
+        if (lastWatchDate != null && DateTime.now().difference(lastWatchDate).inHours < 9) {
           return true;
         }
       }
@@ -219,9 +219,9 @@ class AdService {
           : null;
 
       String? lastWatch = prefs.getString(_adKey);
-      // 🔥 광고 혜택 만료: 3시간 뒤
+      // 🔥 광고 혜택 만료: 9시간 뒤
       DateTime? adExpiry = lastWatch != null 
-          ? DateTime.parse(lastWatch).add(const Duration(hours: 3)) 
+          ? DateTime.parse(lastWatch).add(const Duration(hours: 9)) 
           : null;
 
       if (installExpiry == null && adExpiry == null) return null;
