@@ -11,8 +11,8 @@ void showCreatorDialog(BuildContext context) {
   // 베타 테스터 명단 (12명 예시 이름)
   final List<String> betaTesters = [
     "Jaewon Jo", "Myungwan Jeong", "Jonghyun Yang", "Siwon Park",
-    "Sieun Park", "Tester 6", "Tester 7", "Tester 8",
-    "Tester 9", "Tester 10", "Tester 11", "Tester 12"
+"Sieun Park", "Hayoon Kim", "Junho Lee", "Seoyeon Choi",
+"Lucas Bennett", "Sofia Marchetti", "Ethan Clarke", "Yuki Tanaka"
   ];
 
   showDialog(
