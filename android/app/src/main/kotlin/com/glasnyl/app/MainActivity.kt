@@ -27,19 +27,26 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.core.view.WindowCompat
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
 
 class MainActivity: AudioServiceActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // ✅ Flutter가 시스템 바 영역까지 직접 그리도록 위임 (edge-to-edge)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode = 
+
+        // ✅ [Android 15 대응] LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES는 API 35에서 deprecated됨
+        // → LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS 로 교체 (API 31+)
+        // → Android P ~ R 구형 기기는 기존 SHORT_EDGES 유지
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.attributes.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
 
         super.onCreate(savedInstanceState)
     }
+
     private val METHOD_CHANNEL = "com.glasnyl.app/media_control"
     private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
     private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
@@ -257,20 +264,20 @@ class MainActivity: AudioServiceActivity() {
         )
     }
 
-private fun createAction(iconRes: Int, title: String, action: String, requestCode: Int): RemoteAction {
-    val intent = Intent(action).apply {
-        // 🚀 이 줄을 추가합니다. 내 앱(package)에게만 신호를 보내도록 주소를 찍는 겁니다.
-        `package` = packageName 
+    private fun createAction(iconRes: Int, title: String, action: String, requestCode: Int): RemoteAction {
+        val intent = Intent(action).apply {
+            // 🚀 내 앱(package)에게만 신호를 보내도록 주소를 찍는 겁니다.
+            `package` = packageName 
+        }
+        
+        val pendingIntent = PendingIntent.getBroadcast(
+            this, 
+            requestCode, 
+            intent, 
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
     }
-    
-    val pendingIntent = PendingIntent.getBroadcast(
-        this, 
-        requestCode, 
-        intent, 
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    )
-    return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
-}
 
     private fun updatePipParams() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) {
@@ -316,7 +323,6 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
 
             if (controllers.isNotEmpty()) {
                 // 🚀 [핵심 수정] 현재 실제로 재생 중인(Playing) 세션을 우선적으로 찾습니다.
-                // 만약 재생 중인 게 없다면 리스트의 첫 번째 세션을 가져옵니다.
                 val controller = controllers.find { it.playbackState?.state == PlaybackState.STATE_PLAYING } 
                                  ?: controllers[0]
                 
@@ -329,12 +335,10 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
 
                 val playbackState = controller.playbackState
                 val metadata = controller.metadata
-                
 
                 val currentTitle = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Unknown"
 
                 // 🚀 앨범아트는 제목 변경 시에만 캐시 갱신 — 폴링 데이터에 포함 안 함
-                // SmartClip이 캡처 시 IPC로 대용량 데이터를 가져가며 버퍼 오버플로우 발생하던 문제 해결
                 if (currentTitle != cachedAlbumArtTitle) {
                     val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                                ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
@@ -345,12 +349,10 @@ private fun createAction(iconRes: Int, title: String, action: String, requestCod
                         stream.toByteArray()
                     }
                     if (newArt != null) {
-                        // 비트맵 수신 성공 시에만 캐시 갱신 — 실패 시 타이틀 업데이트 안 해서 다음 요청 때 재시도 가능
                         cachedAlbumArt = newArt
                         cachedAlbumArtTitle = currentTitle
                     } else {
                         cachedAlbumArt = ByteArray(0)
-                        // cachedAlbumArtTitle 업데이트 안 함 → 곡 전환 직후 메타데이터 미준비 상태면 재시도
                     }
                 }
 
