@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 class AdService {
   static const String _adKey = "last_ad_watch_time";
-  static const String _lifetimeKey = "is_lifetime_pro";
   static const String _installTimeKey = "app_install_time";
 
   static String get rewardedAdUnitId => 'ca-app-pub-5949819290701359/9933754081';
@@ -26,42 +25,14 @@ class AdService {
     }
   }
 
-  /// 가격 정보 가져오기 (설치 후 1시간 동안 할인 적용)
-  static Future<Map<String, dynamic>> getPriceInfo() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? installTimeStr = prefs.getString(_installTimeKey);
-      
-      if (installTimeStr == null) {
-        return {'isDiscount': false, 'price': "\$9.99"};
-      }
-
-      DateTime installTime = DateTime.parse(installTimeStr);
-      // 🔥 1분 -> 1시간(60분)으로 수정
-      bool isWithinHour = DateTime.now().difference(installTime).inHours < 1;
-
-      return {
-        'isDiscount': isWithinHour,
-        'price': isWithinHour ? "\$6.99" : "\$9.99",
-        'installTime': installTime,
-      };
-    } catch (e) {
-      return {'isDiscount': false, 'price': "\$9.99"};
-    }
-  }
-
-  /// 권한 확인 (무료 체험 1시간, 광고 혜택 3시간 체크)
+  /// 권한 확인 (무료 체험 1시간, 광고 혜택 9시간 체크)
   static Future<bool> isFullAccess() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
-      final isLifetime = prefs.getBool(_lifetimeKey) ?? false;
-      if (isLifetime) return true;
 
       final String? installTimeStr = prefs.getString(_installTimeKey);
       if (installTimeStr != null) {
         final installTime = DateTime.tryParse(installTimeStr);
-        // 🔥 무료 체험: 1분 -> 1시간으로 수정
         if (installTime != null && DateTime.now().difference(installTime).inHours < 1) {
           return true;
         }
@@ -70,7 +41,6 @@ class AdService {
       final String? lastWatch = prefs.getString(_adKey);
       if (lastWatch != null) {
         final lastWatchDate = DateTime.tryParse(lastWatch);
-        // 🔥 광고 혜택: 3시간 -> 9시간으로 수정
         if (lastWatchDate != null && DateTime.now().difference(lastWatchDate).inHours < 9) {
           return true;
         }
@@ -89,10 +59,10 @@ class AdService {
       debugPrint("⚠️ 광고가 이미 로딩 중입니다.");
       return;
     }
-    
+
     bool isAuthorized = await isFullAccess();
     if (isAuthorized) {
-       _watchedCount = 0;
+      _watchedCount = 0;
     }
 
     _loadAndShowAd(context, onComplete);
@@ -133,7 +103,7 @@ class AdService {
             if (dialogContext != null && Navigator.of(dialogContext!).canPop()) {
               Navigator.of(dialogContext!).pop();
             }
-            
+
             ad.fullScreenContentCallback = FullScreenContentCallback(
               onAdDismissedFullScreenContent: (ad) {
                 ad.dispose();
@@ -183,12 +153,10 @@ class AdService {
 
   /// 광고 서비스 지연 초기화 (음악 서비스와의 충돌 방지)
   static Future<void> initAdmobWithDelay() async {
-    // 🚀 앱 실행 후 5초 대기 (네이티브 미디어 세션이 안정화될 충분한 시간)
     await Future.delayed(const Duration(seconds: 5));
-    
+
     try {
       await MobileAds.instance.initialize();
-      // 테스트 기기 설정 (빌드 시 본인의 기기 ID로 유지하세요)
       MobileAds.instance.updateRequestConfiguration(
         RequestConfiguration(testDeviceIds: ["BF31176F5CBEAAC1A0FABF84A52C1EBF"]),
       );
@@ -210,24 +178,21 @@ class AdService {
   static Future<DateTime?> getPassExpiryTime() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_lifetimeKey) ?? false) return null; // null = Lifetime (UI에서 별도 처리)
 
       String? installTimeStr = prefs.getString(_installTimeKey);
-      // 🔥 무료 체험 만료: 1시간(60분) 뒤
-      DateTime? installExpiry = installTimeStr != null 
-          ? DateTime.parse(installTimeStr).add(const Duration(hours: 1)) 
+      DateTime? installExpiry = installTimeStr != null
+          ? DateTime.parse(installTimeStr).add(const Duration(hours: 1))
           : null;
 
       String? lastWatch = prefs.getString(_adKey);
-      // 🔥 광고 혜택 만료: 9시간 뒤
-      DateTime? adExpiry = lastWatch != null 
-          ? DateTime.parse(lastWatch).add(const Duration(hours: 9)) 
+      DateTime? adExpiry = lastWatch != null
+          ? DateTime.parse(lastWatch).add(const Duration(hours: 9))
           : null;
 
       if (installExpiry == null && adExpiry == null) return null;
       if (installExpiry != null && adExpiry == null) return installExpiry;
       if (installExpiry == null && adExpiry != null) return adExpiry;
-      
+
       return installExpiry!.isAfter(adExpiry!) ? installExpiry : adExpiry;
     } catch (e) {
       return null;

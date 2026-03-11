@@ -64,7 +64,6 @@ void main() async {
   // 광고 초기화: runApp 이후 비동기 실행 (음악 채널 연결 차단 방지)
   unawaited(AdService.initAdmobWithDelay());
   // 결제 서비스 초기화 (purchaseStream 구독 시작)
-  PurchaseService.initialize();
 }
 
 
