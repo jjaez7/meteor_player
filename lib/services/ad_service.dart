@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 class AdService {
   static const String _adKey = "last_ad_watch_time";
   static const String _installTimeKey = "app_install_time";
+  static const String _lifetimeKey = "is_lifetime_pro";
 
   static String get rewardedAdUnitId => 'ca-app-pub-5949819290701359/9933754081';
 
@@ -29,6 +30,9 @@ class AdService {
   static Future<bool> isFullAccess() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // 무제한 활성화 체크
+      if (prefs.getBool(_lifetimeKey) ?? false) return true;
 
       final String? installTimeStr = prefs.getString(_installTimeKey);
       if (installTimeStr != null) {
@@ -178,6 +182,9 @@ class AdService {
   static Future<DateTime?> getPassExpiryTime() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // 무제한이면 null 반환 (만료 없음)
+      if (prefs.getBool(_lifetimeKey) ?? false) return null;
 
       String? installTimeStr = prefs.getString(_installTimeKey);
       DateTime? installExpiry = installTimeStr != null
