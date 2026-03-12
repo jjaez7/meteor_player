@@ -70,6 +70,7 @@ android {
 
 dependencies {
     implementation("androidx.multidex:multidex:2.0.1")
+    // Play Billing AIDL 경고 해결 — 최신 버전 강제 적용
 }
 
 flutter {
