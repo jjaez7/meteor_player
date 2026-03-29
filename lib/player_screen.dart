@@ -109,8 +109,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _playBtnColor = const Color(0xFF735DA5);
 
   // ── 채널
-  static const _pipChannel = MethodChannel('com.glasnyl.app/pip_status');
-  static const _volumeChannel = EventChannel('com.glasnyl.app/volume_events');
+  static const _pipChannel = MethodChannel('com.glasnyl.player/pip_status');
+  static const _volumeChannel = EventChannel('com.glasnyl.player/volume_events');
   final GlobalKey _progressKey = GlobalKey();
 
   // ── 스트림 구독
@@ -509,7 +509,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           await Future.delayed(const Duration(milliseconds: 800));
           if (!mounted) return;
           try {
-            const platform = MethodChannel('com.glasnyl.app/media_control');
+            const platform = MethodChannel('com.glasnyl.player/media_control');
             final dynamic artResult = await platform.invokeMethod('getAlbumArt');
             final Uint8List? artData = artResult != null
                 ? Uint8List.fromList(List<int>.from(artResult))
@@ -541,7 +541,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
 
     _mediaStatusSub?.cancel();
-    _mediaStatusSub = const EventChannel('com.glasnyl.app/media_status')
+    _mediaStatusSub = const EventChannel('com.glasnyl.player/media_status')
         .receiveBroadcastStream()
         .listen((status) {
       if (status is Map && status['position'] != null) {
@@ -565,7 +565,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // ──────────────────────────────────────────────────────────────────────
   Future<void> _fetchInitialStatus() async {
     try {
-      const platform = MethodChannel('com.glasnyl.app/media_control');
+      const platform = MethodChannel('com.glasnyl.player/media_control');
       final dynamic result = await platform.invokeMethod('getCurrentStatus');
 
       if (result != null && mounted) {
@@ -900,7 +900,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     });
                                   }
                                   try {
-                                    const p = MethodChannel('com.glasnyl.app/media_control');
+                                    const p = MethodChannel('com.glasnyl.player/media_control');
                                     final r = await p.invokeMethod('getCurrentStatus');
                                     if (r?['position'] != null) {
                                       _positionNotifier.value = Duration(
@@ -1030,7 +1030,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   Future<void> _syncLyricsPosition() async {
     try {
-      const p = MethodChannel('com.glasnyl.app/media_control');
+      const p = MethodChannel('com.glasnyl.player/media_control');
       final r = await p.invokeMethod('getCurrentStatus');
       if (r?['position'] != null && mounted) {
         _positionNotifier.value =
@@ -1462,7 +1462,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     }
                                     try {
                                       const p = MethodChannel(
-                                          'com.glasnyl.app/media_control');
+                                          'com.glasnyl.player/media_control');
                                       final r =
                                           await p.invokeMethod('getCurrentStatus');
                                       if (r?['position'] != null) {
@@ -2404,7 +2404,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             }
                             try {
                               const p =
-                                  MethodChannel('com.glasnyl.app/media_control');
+                                  MethodChannel('com.glasnyl.player/media_control');
                               final r = await p.invokeMethod('getCurrentStatus');
                               if (r?['position'] != null) {
                                 _positionNotifier.value = Duration(

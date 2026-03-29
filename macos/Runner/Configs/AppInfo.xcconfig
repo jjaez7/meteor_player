@@ -8,7 +8,7 @@
 PRODUCT_NAME = glasnyl
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.glasnyl.app
+PRODUCT_BUNDLE_IDENTIFIER = com.glasnyl.player
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.glasnyl. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.glasnyl.player All rights reserved.

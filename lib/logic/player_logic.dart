@@ -6,7 +6,7 @@ import '../main.dart'; // audioHandler 접근을 위해 필요
 
 class PlayerLogic {
   // main.dart의 _mediaChannel과 동일한 채널 — 한 곳에서만 문자열 관리
-  static const _mediaChannel = MethodChannel('com.glasnyl.app/media_control');
+  static const _mediaChannel = MethodChannel('com.glasnyl.player/media_control');
 
   // --- [1] 테마 및 색상 관련 로직 ---
 

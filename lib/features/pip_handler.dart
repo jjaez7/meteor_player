@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart';
 
 class PipHandler {
   // 진입 및 제어용 채널
-  static const _controlChannel = MethodChannel('com.glasnyl.app/media_control');
+  static const _controlChannel = MethodChannel('com.glasnyl.player/media_control');
   // PiP 상태 및 버튼 액션 수신용 채널
-  static const _statusChannel = MethodChannel('com.glasnyl.app/pip_status');
+  static const _statusChannel = MethodChannel('com.glasnyl.player/pip_status');
 
   /// 🚀 PiP 시스템 버튼 클릭 리스너 등록
   /// [onToggle], [onNext], [onPrev]는 각각 재생/정지, 다음곡, 이전곡 함수를 전달받습니다.

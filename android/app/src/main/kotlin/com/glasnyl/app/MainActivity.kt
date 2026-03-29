@@ -1,4 +1,4 @@
-package com.glasnyl.app
+package com.glasnyl.player
 
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -47,10 +47,10 @@ class MainActivity: AudioServiceActivity() {
         super.onCreate(savedInstanceState)
     }
 
-    private val METHOD_CHANNEL = "com.glasnyl.app/media_control"
-    private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
-    private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
-    private val VOLUME_CHANNEL = "com.glasnyl.app/volume_events"
+    private val METHOD_CHANNEL = "com.glasnyl.player/media_control"
+    private val EVENT_CHANNEL = "com.glasnyl.player/media_status"
+    private val PIP_CHANNEL = "com.glasnyl.player/pip_status"
+    private val VOLUME_CHANNEL = "com.glasnyl.player/volume_events"
     // 🚀 앨범아트를 폴링 데이터에서 분리 — SmartClip IPC 버퍼 오버플로우 방지
     private var cachedAlbumArt: ByteArray = ByteArray(0)
     private var cachedAlbumArtTitle: String = ""

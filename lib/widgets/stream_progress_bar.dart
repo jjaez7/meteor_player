@@ -32,7 +32,7 @@ class StreamProgressBar extends StatelessWidget {
         }
 
         return StreamBuilder(
-          stream: const EventChannel('com.glasnyl.app/media_status').receiveBroadcastStream(),
+          stream: const EventChannel('com.glasnyl.player/media_status').receiveBroadcastStream(),
           builder: (context, snapshot) {
             double currentFactor = 0.0;
 

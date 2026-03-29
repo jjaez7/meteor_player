@@ -32,7 +32,7 @@ void main() async {
     AudioService.init(
       builder: () => MyAudioHandler(),
       config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.glasnyl.app.audio',
+        androidNotificationChannelId: 'com.glasnyl.player.audio',
         androidNotificationChannelName: 'GLASNYL Control',
         androidShowNotificationBadge: true,
         androidStopForegroundOnPause: false,
@@ -69,10 +69,10 @@ void main() async {
 
 class MyAudioHandler extends BaseAudioHandler {
   static const MethodChannel _nativeChannel = MethodChannel(
-    'com.glasnyl.app/media_control',
+    'com.glasnyl.player/media_control',
   );
   static const EventChannel _statusChannel = EventChannel(
-    'com.glasnyl.app/media_status',
+    'com.glasnyl.player/media_status',
   );
 
   Stream<Duration> get position => playbackState.map((state) => state.updatePosition).distinct();
