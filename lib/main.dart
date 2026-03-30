@@ -8,7 +8,7 @@ import 'package:glasnyl/permission_guard.dart';
 import 'player_screen.dart';
 import 'onboarding_screen.dart';
 import 'services/ad_service.dart';
-import 'services/purchase_service.dart';
+//import 'services/purchase_service.dart';
 
 String appVersion="1.0.0";
 

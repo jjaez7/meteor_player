@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // 공통 유틸
 // ─────────────────────────────────────────────────────────────────────────────
-double _lerp(double a, double b, double t) => a + (b - a) * t;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1.  레이저 빔
@@ -69,7 +68,7 @@ class _ConcertLaserBeamsState extends State<ConcertLaserBeams>
         duration: const Duration(milliseconds: 1200),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _LaserPainter(
               t: _ctrl.value,
               accent: widget.accentColor,
@@ -110,11 +109,11 @@ class _LaserPainter extends CustomPainter {
 
     for (int i = 0; i < _lasers.length; i++) {
       final l = _lasers[i];
-      final originX = w * (l[0] as double);
-      final amp     = l[1] as double;
-      final speed   = l[2] as double;
-      final cIdx    = (l[3] as double).toInt();
-      final lWidth  = l[4] as double;
+      final originX = w * l[0];
+      final amp     = l[1];
+      final speed   = l[2];
+      final cIdx    = l[3].toInt();
+      final lWidth  = l[4];
 
       final angle = math.pi / 2 +
           math.sin((t * speed + i * 0.7) * 2 * math.pi) * amp;
@@ -222,7 +221,7 @@ class _ConcertAudienceLightsState extends State<ConcertAudienceLights>
         duration: const Duration(milliseconds: 1500),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _AudiencePainter(
               t: _ctrl.value,
               dots: _dots,
@@ -344,7 +343,7 @@ class ConcertStrobeFlashState extends State<ConcertStrobeFlash>
     return IgnorePointer(
       child: AnimatedBuilder(
         animation: _anim,
-        builder: (_, __) => _anim.value == 0.0
+        builder: (_, _) => _anim.value == 0.0
             ? const SizedBox.shrink()
             : Container(color: Colors.white.withValues(alpha: _anim.value)),
       ),
@@ -447,7 +446,7 @@ class _BurstPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final eased = 1.0 - math.pow(1.0 - t, 3.0) as double;
+    final eased = 1.0 - math.pow(1.0 - t, 3.0);
     final fade  = t < 0.65 ? 1.0 : (1.0 - (t - 0.65) / 0.35).clamp(0.0, 1.0);
 
     for (final p in particles) {
@@ -553,7 +552,7 @@ class _ConcertSmokeHazeState extends State<ConcertSmokeHaze>
         duration: const Duration(milliseconds: 2000),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _SmokePainter(
               t: _ctrl.value,
               puffs: _puffs,
@@ -671,7 +670,7 @@ class _ConcertSpotlightsState extends State<ConcertSpotlights>
         duration: const Duration(milliseconds: 1500),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _SpotlightPainter(
               t: _ctrl.value,
               accent: widget.accentColor,
@@ -848,7 +847,7 @@ class _ConcertConfettiRainState extends State<ConcertConfettiRain>
         duration: const Duration(milliseconds: 1800),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _ConfettiPainter(
               t: _ctrl.value,
               pieces: _pieces,
@@ -984,7 +983,7 @@ class _ConcertStageFloorState extends State<ConcertStageFloor>
         duration: const Duration(milliseconds: 1500),
         child: AnimatedBuilder(
           animation: _ctrl,
-          builder: (_, __) => CustomPaint(
+          builder: (_, _) => CustomPaint(
             painter: _StageFloorPainter(
               t: _ctrl.value,
               accent: widget.accentColor,

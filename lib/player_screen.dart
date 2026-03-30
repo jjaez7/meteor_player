@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/foundation.dart' show compute;
+//import 'package:flutter/foundation.dart' show compute;
 import 'dart:ui';
 import 'dart:ui' as ui;
 import 'dart:async';
@@ -29,6 +29,8 @@ import 'services/ad_service.dart';
 import 'menu/dialog_pass.dart';
 // 🎸 콘서트 효과 임포트
 import 'concert_effects.dart';
+import 'widgets/now_playing_card.dart';
+import 'services/share_service.dart';
 
 Timer? _accessCheckTimer;
 bool _isPassDialogShowing = false;
@@ -94,7 +96,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   int _lastRequestToken = 0;
 
   // ── 재생 위치
-  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(
+    Duration.zero,
+  );
 
   // ── 턴테이블 progress 분배
   final StreamController<double> _turntableProgressCtrl =
@@ -110,8 +114,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // ── 채널
   static const _pipChannel = MethodChannel('com.glasnyl.player/pip_status');
-  static const _volumeChannel = EventChannel('com.glasnyl.player/volume_events');
+  static const _volumeChannel = EventChannel(
+    'com.glasnyl.player/volume_events',
+  );
   final GlobalKey _progressKey = GlobalKey();
+  final GlobalKey _shareCardKey = GlobalKey();
 
   // ── 스트림 구독
   StreamSubscription? _mediaStatusSub;
@@ -143,9 +150,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           break;
         case "onPipAction":
           final action = call.arguments.toString().trim();
-          if (action == "TOGGLE") _handleInternalToggle();
-          else if (action == "NEXT") PlayerLogic.skipNext();
-          else if (action == "PREV") PlayerLogic.skipPrevious();
+          if (action == "TOGGLE")
+            _handleInternalToggle();
+          else if (action == "NEXT")
+            PlayerLogic.skipNext();
+          else if (action == "PREV")
+            PlayerLogic.skipPrevious();
           break;
       }
     });
@@ -153,9 +163,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     WakelockPlus.enable();
 
     _lpController = AnimationController(
-      vsync: this, duration: const Duration(seconds: 20));
+      vsync: this,
+      duration: const Duration(seconds: 20),
+    );
     _needleController = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1000));
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
 
     audioHandler.position.listen((pos) {
       if (mounted) _positionNotifier.value = pos;
@@ -203,10 +217,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _loadSavedColors();
     _loadInitialVolume();
 
-    _volumeSub = _volumeChannel.receiveBroadcastStream().listen((dynamic value) {
+    _volumeSub = _volumeChannel.receiveBroadcastStream().listen((
+      dynamic value,
+    ) {
       if (mounted && value != null) {
-        _volumeNotifier.value =
-            (value as num).toDouble().clamp(0.0, 1.0);
+        _volumeNotifier.value = (value as num).toDouble().clamp(0.0, 1.0);
       }
     });
 
@@ -301,6 +316,91 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
       });
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 🎸 캡처 토글
+  // ──────────────────────────────────────────────────────────────────────
+  void _handleShareCard() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.68,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: NowPlayingCard(
+                  cardKey: _shareCardKey,
+                  title: _currentTitle,
+                  artist: _currentArtist,
+                  albumArtBytes: _albumArtBytes,
+                  bgColor: _bgColor,
+                  accentColor: _playBtnColor,
+                  textColor: _textColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // 공유 버튼
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _playBtnColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(Icons.ios_share_rounded),
+              label: const Text(
+                "Share",
+                style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1),
+              ),
+              onPressed: () async {
+                // 1. 다이얼로그 열려있는 동안 캡처
+                final bytes = await ShareService.captureCard(
+                  cardKey: _shareCardKey,
+                  context: ctx,
+                );
+                if (bytes == null) return;
+
+                // 2. 다이얼로그 닫기
+                if (ctx.mounted) Navigator.pop(ctx);
+
+                // 3. 캡처된 bytes로 공유
+                if (context.mounted) {
+                  await ShareService.shareBytes(
+                    pngBytes: bytes,
+                    context: context,
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            // 닫기
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(
+                "Cancel",
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -435,12 +535,24 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void _handleColorChange(Color newColor, String target) {
     setState(() {
       switch (target) {
-        case 'bg': _bgColor = newColor; break;
-        case 'lp': _lpColor = newColor; break;
-        case 'text': _textColor = newColor; break;
-        case 'artist': _artistColor = newColor; break;
-        case 'bar': _barColor = newColor; break;
-        case 'btn': _playBtnColor = newColor; break;
+        case 'bg':
+          _bgColor = newColor;
+          break;
+        case 'lp':
+          _lpColor = newColor;
+          break;
+        case 'text':
+          _textColor = newColor;
+          break;
+        case 'artist':
+          _artistColor = newColor;
+          break;
+        case 'bar':
+          _barColor = newColor;
+          break;
+        case 'btn':
+          _playBtnColor = newColor;
+          break;
       }
     });
     PlayerLogic.updateColor(target, newColor);
@@ -463,8 +575,16 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     if (!mounted) return;
     setState(() {
       final size = MediaQuery.of(context).size;
-      _portraitConfig = LayoutEngine.calculate(size, Orientation.portrait, false);
-      _landscapeConfig = LayoutEngine.calculate(size, Orientation.landscape, false);
+      _portraitConfig = LayoutEngine.calculate(
+        size,
+        Orientation.portrait,
+        false,
+      );
+      _landscapeConfig = LayoutEngine.calculate(
+        size,
+        Orientation.landscape,
+        false,
+      );
     });
   }
 
@@ -477,7 +597,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     if (_notificationSub != null) return;
 
-    _notificationSub = NotificationListenerService.notificationsStream.listen((event) async {
+    _notificationSub = NotificationListenerService.notificationsStream.listen((
+      event,
+    ) async {
       if (event.hasRemoved == true || event.title == null) return;
       if (!MusicColorLogic.isMusicApp(event.packageName ?? "")) return;
       if (_currentTitle == event.title || !mounted) return;
@@ -510,7 +632,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           if (!mounted) return;
           try {
             const platform = MethodChannel('com.glasnyl.player/media_control');
-            final dynamic artResult = await platform.invokeMethod('getAlbumArt');
+            final dynamic artResult = await platform.invokeMethod(
+              'getAlbumArt',
+            );
             final Uint8List? artData = artResult != null
                 ? Uint8List.fromList(List<int>.from(artResult))
                 : null;
@@ -543,21 +667,24 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _mediaStatusSub?.cancel();
     _mediaStatusSub = const EventChannel('com.glasnyl.player/media_status')
         .receiveBroadcastStream()
-        .listen((status) {
-      if (status is Map && status['position'] != null) {
-        final int pos = status['position'];
-        final int dur = (status['duration'] as num?)?.toInt() ?? 0;
-        final diff = (pos - _positionNotifier.value.inMilliseconds).abs();
-        if (diff > 200) {
-          _positionNotifier.value = Duration(milliseconds: pos);
-        }
-        if (dur > 0 && !_turntableProgressCtrl.isClosed) {
-          _turntableProgressCtrl.add((pos / dur).clamp(0.0, 1.0));
-        }
-      }
-    }, onError: (e) {
-      debugPrint('media_status stream error (ignored): $e');
-    });
+        .listen(
+          (status) {
+            if (status is Map && status['position'] != null) {
+              final int pos = status['position'];
+              final int dur = (status['duration'] as num?)?.toInt() ?? 0;
+              final diff = (pos - _positionNotifier.value.inMilliseconds).abs();
+              if (diff > 200) {
+                _positionNotifier.value = Duration(milliseconds: pos);
+              }
+              if (dur > 0 && !_turntableProgressCtrl.isClosed) {
+                _turntableProgressCtrl.add((pos / dur).clamp(0.0, 1.0));
+              }
+            }
+          },
+          onError: (e) {
+            debugPrint('media_status stream error (ignored): $e');
+          },
+        );
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -571,7 +698,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       if (result != null && mounted) {
         final data = Map<String, dynamic>.from(result);
         final dynamic artResult = await platform.invokeMethod('getAlbumArt');
-        final Uint8List? artData = artResult != null ? Uint8List.fromList(List<int>.from(artResult)) : null;
+        final Uint8List? artData = artResult != null
+            ? Uint8List.fromList(List<int>.from(artResult))
+            : null;
 
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
@@ -596,14 +725,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
         if (_isPlaying) {
           if (!_lpController.isAnimating) _lpController.repeat();
-          _needleController.animateTo(1.0,
-              duration: const Duration(milliseconds: 800),
-              curve: Curves.easeOut);
+          _needleController.animateTo(
+            1.0,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOut,
+          );
         } else {
           _lpController.stop();
-          _needleController.animateTo(0.0,
-              duration: const Duration(milliseconds: 800),
-              curve: Curves.easeOut);
+          _needleController.animateTo(
+            0.0,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOut,
+          );
         }
 
         if (artData != null && artData.isNotEmpty) {
@@ -639,10 +772,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
     try {
-      final rawCodec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: 300,
-      );
+      final rawCodec = await ui.instantiateImageCodec(bytes, targetWidth: 300);
       final frame = await rawCodec.getNextFrame();
       final srcImage = frame.image;
       final int w = srcImage.width;
@@ -655,11 +785,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       canvas.drawImage(srcImage, ui.Offset.zero, paint);
       srcImage.dispose();
 
-      final blurred = await recorder
-          .endRecording()
-          .toImage(w, h);
-      final byteData = await blurred.toByteData(
-          format: ui.ImageByteFormat.png);
+      final blurred = await recorder.endRecording().toImage(w, h);
+      final byteData = await blurred.toByteData(format: ui.ImageByteFormat.png);
       blurred.dispose();
 
       if (mounted && byteData != null) {
@@ -701,11 +828,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       child: RepaintBoundary(
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 600),
-                          layoutBuilder: (child, prev) =>
-                              Stack(children: [...prev, if (child != null) child]),
+                          layoutBuilder: (child, prev) => Stack(
+                            children: [...prev, if (child != null) child],
+                          ),
                           child: SizedBox.expand(
                             key: ValueKey(
-                                '${_currentTitle}_${_blurredBgBytes.hashCode}'),
+                              '${_currentTitle}_${_blurredBgBytes.hashCode}',
+                            ),
                             child: Image.memory(
                               _blurredBgBytes!,
                               fit: BoxFit.cover,
@@ -730,7 +859,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             duration: const Duration(milliseconds: 600),
                             color: _bgColor.withValues(alpha: 0.30),
                           ),
-                          Container(color: Colors.black.withValues(alpha: 0.25)),
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.25),
+                          ),
                           Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
@@ -776,11 +907,16 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
                 if (!_isPipMode)
                   Positioned(
-                    top: 0, left: 0, right: 0,
+                    top: 0,
+                    left: 0,
+                    right: 0,
                     child: RepaintBoundary(
                       child: Padding(
                         padding: EdgeInsets.only(
-                          top: (MediaQuery.of(context).padding.top - 8.0).clamp(0.0, double.infinity),
+                          top: (MediaQuery.of(context).padding.top - 8.0).clamp(
+                            0.0,
+                            double.infinity,
+                          ),
                           left: MediaQuery.of(context).padding.left,
                           right: MediaQuery.of(context).padding.right,
                         ),
@@ -805,6 +941,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           // 🎸 콘서트 모드 콜백 전달
                           onConcertModeToggled: _handleConcertModeToggle,
                           isConcertMode: _isConcertMode,
+                          onShareCard: _handleShareCard,
                         ),
                       ),
                     ),
@@ -829,37 +966,50 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildLandscapeFullLayout(Size size, PlayerConfig config) {
     final EdgeInsets sysPad = MediaQuery.of(context).padding;
-    final double topPad  = sysPad.top    + 48.0;
-    final double botPad  = sysPad.bottom +  8.0;
-    final double hPadLeft  = size.width * 0.018 + sysPad.left;
+    final double topPad = sysPad.top + 48.0;
+    final double botPad = sysPad.bottom + 8.0;
+    final double hPadLeft = size.width * 0.018 + sysPad.left;
     final double hPadRight = size.width * 0.018 + sysPad.right;
-    final double hPad      = size.width * 0.018;
-    final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
+    final double hPad = size.width * 0.018;
+    final double available = (size.height - topPad - botPad).clamp(
+      0.0,
+      double.infinity,
+    );
 
-    final double usableW = (size.width - hPadLeft - hPadRight).clamp(0.0, double.infinity);
-    final double panelW  = usableW * 0.35;
-    final double lpW     = (usableW - panelW - hPad).clamp(0.0, double.infinity);
+    final double usableW = (size.width - hPadLeft - hPadRight).clamp(
+      0.0,
+      double.infinity,
+    );
+    final double panelW = usableW * 0.35;
+    final double lpW = (usableW - panelW - hPad).clamp(0.0, double.infinity);
 
     final double turntableSizeByW = lpW;
     final double turntableSizeByH = available > 0 ? available / 0.72 : lpW;
-    final double turntableSize = (turntableSizeByW < turntableSizeByH
-        ? turntableSizeByW
-        : turntableSizeByH).clamp(0.0, double.infinity);
+    final double turntableSize =
+        (turntableSizeByW < turntableSizeByH
+                ? turntableSizeByW
+                : turntableSizeByH)
+            .clamp(0.0, double.infinity);
 
     final double lpH = turntableSize * 0.72;
     final double volumePanelH = (available - lpH).clamp(0.0, double.infinity);
 
-    final double titleFs   = (panelW * 0.13).clamp(7.0, 36.0);
-    final double artistFs  = (panelW * 0.075).clamp(5.0, 22.0);
-    final double itemGap   = (available * 0.025).clamp(0.0, 18.0);
-    final double bigGap    = (available * 0.045).clamp(0.0, 28.0);
-    final double vPad      = (available * 0.04).clamp(0.0, 20.0);
+    final double titleFs = (panelW * 0.13).clamp(7.0, 36.0);
+    final double artistFs = (panelW * 0.075).clamp(5.0, 22.0);
+    final double itemGap = (available * 0.025).clamp(0.0, 18.0);
+    final double bigGap = (available * 0.045).clamp(0.0, 28.0);
+    final double vPad = (available * 0.04).clamp(0.0, 20.0);
     final double hInnerPad = (panelW * 0.07).clamp(10.0, 28.0);
-    final double innerW    = (panelW - hInnerPad * 2).clamp(1.0, double.infinity);
+    final double innerW = (panelW - hInnerPad * 2).clamp(1.0, double.infinity);
 
     return Positioned.fill(
       child: Padding(
-        padding: EdgeInsets.only(top: topPad, bottom: botPad, left: hPadLeft, right: hPadRight),
+        padding: EdgeInsets.only(
+          top: topPad,
+          bottom: botPad,
+          left: hPadLeft,
+          right: hPadRight,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -887,8 +1037,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               artist: _currentArtist,
                               lpController: _lpController,
                               isPlaying: _isPlaying,
-                              onToggleMode: () =>
-                                  setState(() => _isMinimalMode = !_isMinimalMode),
+                              onToggleMode: () => setState(
+                                () => _isMinimalMode = !_isMinimalMode,
+                              ),
                               onShowLyrics: () {
                                 setState(() => _showLyrics = true);
                                 Future(() async {
@@ -900,11 +1051,17 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     });
                                   }
                                   try {
-                                    const p = MethodChannel('com.glasnyl.player/media_control');
-                                    final r = await p.invokeMethod('getCurrentStatus');
+                                    const p = MethodChannel(
+                                      'com.glasnyl.player/media_control',
+                                    );
+                                    final r = await p.invokeMethod(
+                                      'getCurrentStatus',
+                                    );
                                     if (r?['position'] != null) {
                                       _positionNotifier.value = Duration(
-                                          milliseconds: (r['position'] as num).toInt());
+                                        milliseconds: (r['position'] as num)
+                                            .toInt(),
+                                      );
                                     }
                                   } catch (_) {}
                                 });
@@ -915,11 +1072,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           );
                         }
 
-                        final double progress = (_totalDuration != null &&
+                        final double progress =
+                            (_totalDuration != null &&
                                 _totalDuration!.inMilliseconds > 0)
                             ? (realTimePos.inMilliseconds /
-                                    _totalDuration!.inMilliseconds)
-                                .clamp(0.0, 1.0)
+                                      _totalDuration!.inMilliseconds)
+                                  .clamp(0.0, 1.0)
                             : 0.0;
 
                         return RepaintBoundary(
@@ -944,12 +1102,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               PlayerLogic.skipPrevious();
                             },
                             onSeek: (ratio) {
-                              final dur = _totalDuration ??
+                              final dur =
+                                  _totalDuration ??
                                   audioHandler.mediaItem.value?.duration;
                               if (dur != null && dur.inMilliseconds > 0) {
                                 final target = Duration(
-                                    milliseconds:
-                                        (dur.inMilliseconds * ratio).round());
+                                  milliseconds: (dur.inMilliseconds * ratio)
+                                      .round(),
+                                );
                                 _handleSeek(target);
                                 PlayerLogic.seekTo(ratio);
                               }
@@ -964,8 +1124,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     SizedBox(height: hPad),
                     Expanded(
                       child: _landscapeShowLyrics
-                          ? _buildLandscapeLyricsPanel(lpW, (volumePanelH - hPad).clamp(1.0, double.infinity))
-                          : _buildVolumePanel(lpW, (volumePanelH - hPad).clamp(1.0, double.infinity)),
+                          ? _buildLandscapeLyricsPanel(
+                              lpW,
+                              (volumePanelH - hPad).clamp(1.0, double.infinity),
+                            )
+                          : _buildVolumePanel(
+                              lpW,
+                              (volumePanelH - hPad).clamp(1.0, double.infinity),
+                            ),
                     ),
                   ],
                 ],
@@ -978,8 +1144,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
               flex: 35,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final double clockH = (panelW * 0.14).clamp(16.0, 28.0) + 20.0;
-                  final bool showLandscapeClock = constraints.maxHeight > clockH + 290;
+                  final double clockH =
+                      (panelW * 0.14).clamp(16.0, 28.0) + 20.0;
+                  final bool showLandscapeClock =
+                      constraints.maxHeight > clockH + 290;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1033,8 +1201,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       const p = MethodChannel('com.glasnyl.player/media_control');
       final r = await p.invokeMethod('getCurrentStatus');
       if (r?['position'] != null && mounted) {
-        _positionNotifier.value =
-            Duration(milliseconds: (r['position'] as num).toInt());
+        _positionNotifier.value = Duration(
+          milliseconds: (r['position'] as num).toInt(),
+        );
       }
     } catch (_) {}
   }
@@ -1048,7 +1217,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       child: GestureDetector(
         onTap: _handleClockTap,
         child: StreamBuilder<DateTime>(
-          stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
+          stream: Stream.periodic(
+            const Duration(seconds: 1),
+            (_) => DateTime.now(),
+          ),
           initialData: DateTime.now(),
           builder: (context, snapshot) {
             final now = snapshot.data ?? DateTime.now();
@@ -1161,13 +1333,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   Widget _buildVolumePanel(double w, double h) {
-    final double safeH   = h.clamp(1.0, double.infinity);
-    final double thumbR  = (safeH * 0.18).clamp(5.0, 12.0);
-    final double trackH  = thumbR;
+    final double safeH = h.clamp(1.0, double.infinity);
+    final double thumbR = (safeH * 0.18).clamp(5.0, 12.0);
+    final double trackH = thumbR;
     final double sliderH = thumbR * 2 + 8;
 
     final double iconSize = (safeH * 0.22).clamp(12.0, 20.0);
-    final double labelFs  = (safeH * 0.14).clamp(9.0, 13.0);
+    final double labelFs = (safeH * 0.14).clamp(9.0, 13.0);
     final double labelRowH = iconSize;
     final double gapAfterLabel = 6.0;
 
@@ -1218,8 +1390,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               volume < 0.05
                                   ? Icons.volume_off_rounded
                                   : volume < 0.5
-                                      ? Icons.volume_down_rounded
-                                      : Icons.volume_up_rounded,
+                                  ? Icons.volume_down_rounded
+                                  : Icons.volume_up_rounded,
                               color: _barColor,
                               size: iconSize,
                             ),
@@ -1328,87 +1500,98 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
     return RepaintBoundary(
       child: GestureDetector(
-      onTap: _handlePortraitClockTap,
-      child: StreamBuilder<DateTime>(
-        stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
-        initialData: DateTime.now(),
-        builder: (context, snapshot) {
-          final now = snapshot.data ?? DateTime.now();
-          final String timeText =
-              '${now.hour.toString().padLeft(2, '0')}:'
-              '${now.minute.toString().padLeft(2, '0')}';
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                width: w,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  color: Colors.white.withValues(alpha: 0.07),
-                  border: Border.all(
-                    color: _portraitShowLyrics
-                        ? _barColor.withValues(alpha: 0.45)
-                        : Colors.white.withValues(alpha: 0.18),
-                    width: _portraitShowLyrics ? 1.4 : 1.0,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+        onTap: _handlePortraitClockTap,
+        child: StreamBuilder<DateTime>(
+          stream: Stream.periodic(
+            const Duration(seconds: 1),
+            (_) => DateTime.now(),
+          ),
+          initialData: DateTime.now(),
+          builder: (context, snapshot) {
+            final now = snapshot.data ?? DateTime.now();
+            final String timeText =
+                '${now.hour.toString().padLeft(2, '0')}:'
+                '${now.minute.toString().padLeft(2, '0')}';
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  width: w,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.white.withValues(alpha: 0.07),
+                    border: Border.all(
+                      color: _portraitShowLyrics
+                          ? _barColor.withValues(alpha: 0.45)
+                          : Colors.white.withValues(alpha: 0.18),
+                      width: _portraitShowLyrics ? 1.4 : 1.0,
                     ),
-                  ],
-                ),
-                padding: EdgeInsets.symmetric(
-                    horizontal: hPadInner, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Icon(
-                      _portraitShowLyrics
-                          ? Icons.lyrics_rounded
-                          : Icons.access_time_rounded,
-                      color: _barColor,
-                      size: iconSize,
-                    ),
-                    Text(
-                      timeText,
-                      style: TextStyle(
-                        color: _textColor.withValues(alpha: 0.90),
-                        fontSize: timeFontSize,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2.0,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: hPadInner,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Icon(
+                        _portraitShowLyrics
+                            ? Icons.lyrics_rounded
+                            : Icons.access_time_rounded,
+                        color: _barColor,
+                        size: iconSize,
+                      ),
+                      Text(
+                        timeText,
+                        style: TextStyle(
+                          color: _textColor.withValues(alpha: 0.90),
+                          fontSize: timeFontSize,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
-      ),
+            );
+          },
+        ),
       ),
     );
   }
 
   Widget _buildPortraitFullLayout(Size size, PlayerConfig config) {
     final EdgeInsets sysPad = MediaQuery.of(context).padding;
-    final double topPad  = sysPad.top    + 52.0;
-    final double botPad  = sysPad.bottom + 12.0;
-    final double available = (size.height - topPad - botPad).clamp(0.0, double.infinity);
+    final double topPad = sysPad.top + 52.0;
+    final double botPad = sysPad.bottom + 12.0;
+    final double available = (size.height - topPad - botPad).clamp(
+      0.0,
+      double.infinity,
+    );
     final double hPad = size.width * 0.04 + (sysPad.left + sysPad.right) / 2;
 
-    final double gap         = hPad * 0.5;
+    final double gap = hPad * 0.5;
 
     final bool showPortraitClock = available >= 450.0;
     final double clockPanelH = showPortraitClock
         ? (available * 0.07).clamp(0.0, 64.0)
         : 0.0;
     final double clockGap = showPortraitClock ? gap : 0.0;
-    final double remaining   = (available - clockPanelH - gap - clockGap).clamp(0.0, double.infinity);
-    final double turntableH  = remaining * 0.585;
-    final double panelH      = remaining * 0.415;
+    final double remaining = (available - clockPanelH - gap - clockGap).clamp(
+      0.0,
+      double.infinity,
+    );
+    final double turntableH = remaining * 0.585;
+    final double panelH = remaining * 0.415;
     final double panelContentH = (panelH - 8.0).clamp(1.0, double.infinity);
     final double turntableSize = turntableH > 0
         ? (size.width * 0.97).clamp(0.0, turntableH / 0.72)
@@ -1425,7 +1608,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 ? Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
                     child: _buildPortraitLyricsPanel(
-                        size.width - hPad * 2, turntableH),
+                      size.width - hPad * 2,
+                      turntableH,
+                    ),
                   )
                 : Center(
                     child: GestureDetector(
@@ -1449,7 +1634,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                 lpController: _lpController,
                                 isPlaying: _isPlaying,
                                 onToggleMode: () => setState(
-                                    () => _isMinimalMode = !_isMinimalMode),
+                                  () => _isMinimalMode = !_isMinimalMode,
+                                ),
                                 onShowLyrics: () {
                                   setState(() => _showLyrics = true);
                                   Future(() async {
@@ -1462,13 +1648,16 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     }
                                     try {
                                       const p = MethodChannel(
-                                          'com.glasnyl.player/media_control');
-                                      final r =
-                                          await p.invokeMethod('getCurrentStatus');
+                                        'com.glasnyl.player/media_control',
+                                      );
+                                      final r = await p.invokeMethod(
+                                        'getCurrentStatus',
+                                      );
                                       if (r?['position'] != null) {
                                         _positionNotifier.value = Duration(
-                                            milliseconds:
-                                                (r['position'] as num).toInt());
+                                          milliseconds: (r['position'] as num)
+                                              .toInt(),
+                                        );
                                       }
                                     } catch (_) {}
                                   });
@@ -1479,11 +1668,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             );
                           }
 
-                          final double progress = (_totalDuration != null &&
+                          final double progress =
+                              (_totalDuration != null &&
                                   _totalDuration!.inMilliseconds > 0)
                               ? (realTimePos.inMilliseconds /
-                                      _totalDuration!.inMilliseconds)
-                                  .clamp(0.0, 1.0)
+                                        _totalDuration!.inMilliseconds)
+                                    .clamp(0.0, 1.0)
                               : 0.0;
 
                           return RepaintBoundary(
@@ -1508,12 +1698,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                 PlayerLogic.skipPrevious();
                               },
                               onSeek: (ratio) {
-                                final dur = _totalDuration ??
+                                final dur =
+                                    _totalDuration ??
                                     audioHandler.mediaItem.value?.duration;
                                 if (dur != null && dur.inMilliseconds > 0) {
                                   final target = Duration(
-                                      milliseconds:
-                                          (dur.inMilliseconds * ratio).round());
+                                    milliseconds: (dur.inMilliseconds * ratio)
+                                        .round(),
+                                  );
                                   _handleSeek(target);
                                   PlayerLogic.seekTo(ratio);
                                 }
@@ -1568,14 +1760,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double safeH = panelH.clamp(1.0, double.infinity);
 
     final double sidePad = hInnerPad ?? size.width * 0.06;
-    final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08)).clamp(1.0, double.infinity);
+    final double iW = (innerW ?? (size.width - sidePad * 2 - size.width * 0.08))
+        .clamp(1.0, double.infinity);
     final double vPad = (verticalPad ?? (safeH * 0.05)).clamp(0.0, 16.0);
 
-    final double titleFs  = titleFontSize  ?? (safeH * 0.10).clamp(7.0, 28.0);
+    final double titleFs = titleFontSize ?? (safeH * 0.10).clamp(7.0, 28.0);
     final double artistFs = artistFontSize ?? (safeH * 0.065).clamp(5.0, 16.0);
 
     final double gap1 = (itemGap ?? (safeH * 0.03)).clamp(2.0, 8.0);
-    final double gap2 = (bigGap  ?? (safeH * 0.05)).clamp(4.0, 14.0);
+    final double gap2 = (bigGap ?? (safeH * 0.05)).clamp(4.0, 14.0);
     final double gap3 = (safeH * 0.04).clamp(3.0, 12.0);
 
     final double sideBtnSz = (safeH * 0.13).clamp(36.0, 54.0);
@@ -1587,126 +1780,127 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-          height: safeH,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            color: Colors.white.withValues(alpha: 0.09),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.20),
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.20),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
+            height: safeH,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              color: Colors.white.withValues(alpha: 0.09),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.20),
+                width: 1.2,
               ),
-            ],
-          ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: sidePad,
-              vertical: vPad,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.max,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: iW,
-                  child: MarqueeTitleWidget(
-                    key: Key(_currentTitle),
-                    title: _currentTitle,
-                    fontSize: titleFs,
-                    textColor: _textColor,
-                    width: iW,
-                  ),
-                ),
-
-                SizedBox(height: gap1),
-
-                ArtistTextWidget(
-                  artist: _currentArtist,
-                  fontSize: artistFs,
-                  color: _artistColor.withValues(alpha: 0.85),
-                ),
-
-                SizedBox(height: gap2),
-
-                SizedBox(
-                  key: _progressKey,
-                  width: iW,
-                  child: StreamProgressBar(
-                    barWidth: iW.clamp(1.0, double.infinity),
-                    bgColor: _bgColor,
-                    barColor: _barColor,
-                    onSeek: (ratio) {
-                      PlayerLogic.seekTo(ratio);
-                      final dur = _totalDuration ??
-                          audioHandler.mediaItem.value?.duration;
-                      if (dur != null && dur.inMilliseconds > 0) {
-                        _positionNotifier.value = Duration(
-                            milliseconds:
-                                (dur.inMilliseconds * ratio).toInt());
-                      }
-                    },
-                  ),
-                ),
-
-                SizedBox(height: gap3),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildScaledSideBtn(
-                      icon: Icons.skip_previous_rounded,
-                      size: sideBtnSz,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        PlayerLogic.skipPrevious();
-                      },
-                    ),
-                    _buildScaledMainBtn(
-                      isPlaying: _isPlaying,
-                      size: mainBtnSz,
-                      activeColor: _barColor,
-                      onTap: () {
-                        PlayerLogic.togglePlay(
-                          isPlaying: _isPlaying,
-                          onToggle: () {
-                            if (mounted) {
-                              setState(() {
-                                _isPlaying = !_isPlaying;
-                                if (_isPlaying) {
-                                  _lpController.repeat();
-                                  _needleController.forward();
-                                } else {
-                                  _lpController.stop();
-                                  _needleController.reverse();
-                                }
-                              });
-                            }
-                          },
-                        );
-                      },
-                    ),
-                    _buildScaledSideBtn(
-                      icon: Icons.skip_next_rounded,
-                      size: sideBtnSz,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        PlayerLogic.skipNext();
-                      },
-                    ),
-                  ],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.20),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
                 ),
               ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: sidePad,
+                vertical: vPad,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.max,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: iW,
+                    child: MarqueeTitleWidget(
+                      key: Key(_currentTitle),
+                      title: _currentTitle,
+                      fontSize: titleFs,
+                      textColor: _textColor,
+                      width: iW,
+                    ),
+                  ),
+
+                  SizedBox(height: gap1),
+
+                  ArtistTextWidget(
+                    artist: _currentArtist,
+                    fontSize: artistFs,
+                    color: _artistColor.withValues(alpha: 0.85),
+                  ),
+
+                  SizedBox(height: gap2),
+
+                  SizedBox(
+                    key: _progressKey,
+                    width: iW,
+                    child: StreamProgressBar(
+                      barWidth: iW.clamp(1.0, double.infinity),
+                      bgColor: _bgColor,
+                      barColor: _barColor,
+                      onSeek: (ratio) {
+                        PlayerLogic.seekTo(ratio);
+                        final dur =
+                            _totalDuration ??
+                            audioHandler.mediaItem.value?.duration;
+                        if (dur != null && dur.inMilliseconds > 0) {
+                          _positionNotifier.value = Duration(
+                            milliseconds: (dur.inMilliseconds * ratio).toInt(),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+
+                  SizedBox(height: gap3),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildScaledSideBtn(
+                        icon: Icons.skip_previous_rounded,
+                        size: sideBtnSz,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          PlayerLogic.skipPrevious();
+                        },
+                      ),
+                      _buildScaledMainBtn(
+                        isPlaying: _isPlaying,
+                        size: mainBtnSz,
+                        activeColor: _barColor,
+                        onTap: () {
+                          PlayerLogic.togglePlay(
+                            isPlaying: _isPlaying,
+                            onToggle: () {
+                              if (mounted) {
+                                setState(() {
+                                  _isPlaying = !_isPlaying;
+                                  if (_isPlaying) {
+                                    _lpController.repeat();
+                                    _needleController.forward();
+                                  } else {
+                                    _lpController.stop();
+                                    _needleController.reverse();
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        },
+                      ),
+                      _buildScaledSideBtn(
+                        icon: Icons.skip_next_rounded,
+                        size: sideBtnSz,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          PlayerLogic.skipNext();
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -1728,7 +1922,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             width: 1.5,
           ),
         ),
-        child: Icon(icon, size: size * 0.52, color: Colors.white.withValues(alpha: 0.9)),
+        child: Icon(
+          icon,
+          size: size * 0.52,
+          color: Colors.white.withValues(alpha: 0.9),
+        ),
       ),
     );
   }
@@ -1785,11 +1983,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Widget _buildPipLayout(Size size) {
     final double w = size.width;
     final double h = size.height;
-    final double lpAreaH  = h * 0.62;
-    final double infoH    = h * 0.38;
+    final double lpAreaH = h * 0.62;
+    final double infoH = h * 0.38;
 
-    final double lpSize   = (lpAreaH * 0.85).clamp(0.0, double.infinity);
-    final double titleFs  = (infoH * 0.38).clamp(9.0, 14.0);
+    final double lpSize = (lpAreaH * 0.85).clamp(0.0, double.infinity);
+    final double titleFs = (infoH * 0.38).clamp(9.0, 14.0);
     final double artistFs = (infoH * 0.26).clamp(7.0, 11.0);
 
     return Positioned.fill(
@@ -1806,8 +2004,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     progress = snapshot.data!;
                   } else {
                     final pos = _positionNotifier.value;
-                    if (_totalDuration != null && _totalDuration!.inMilliseconds > 0) {
-                      progress = (pos.inMilliseconds / _totalDuration!.inMilliseconds).clamp(0.0, 1.0);
+                    if (_totalDuration != null &&
+                        _totalDuration!.inMilliseconds > 0) {
+                      progress =
+                          (pos.inMilliseconds / _totalDuration!.inMilliseconds)
+                              .clamp(0.0, 1.0);
                     }
                   }
                   return AnimatedBuilder(
@@ -1871,7 +2072,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               child: CircularProgressIndicator(
                                 value: progress,
                                 strokeWidth: lpSize * 0.022,
-                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.08,
+                                ),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   _barColor.withValues(alpha: 0.75),
                                 ),
@@ -1937,36 +2140,44 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double h = size.height;
 
     final EdgeInsets safePad = MediaQuery.of(context).padding;
-    final double safeH = (h - safePad.top - safePad.bottom).clamp(1.0, double.infinity);
-    final double safeW = (w - safePad.left - safePad.right).clamp(1.0, double.infinity);
+    final double safeH = (h - safePad.top - safePad.bottom).clamp(
+      1.0,
+      double.infinity,
+    );
+    final double safeW = (w - safePad.left - safePad.right).clamp(
+      1.0,
+      double.infinity,
+    );
 
     final double hPad = safeW * 0.05;
     final double vGap = safeH * 0.02;
 
-    final double rawHeaderH  = (safeH * 0.13).clamp(28.0, 46.0);
-    final double rawArtH     = (safeH * 0.42).clamp(60.0, 200.0);
-    final double rawInfoH    = (safeH * 0.20).clamp(36.0, 80.0);
+    final double rawHeaderH = (safeH * 0.13).clamp(28.0, 46.0);
+    final double rawArtH = (safeH * 0.42).clamp(60.0, 200.0);
+    final double rawInfoH = (safeH * 0.20).clamp(36.0, 80.0);
     final double rawControlH = (safeH * 0.19).clamp(32.0, 64.0);
-    final double totalGaps   = vGap * 3;
+    final double totalGaps = vGap * 3;
 
-    final double rawTotal = rawHeaderH + rawArtH + rawInfoH + rawControlH + totalGaps;
+    final double rawTotal =
+        rawHeaderH + rawArtH + rawInfoH + rawControlH + totalGaps;
 
-    final double sectionBudget = (safeH - totalGaps).clamp(1.0, double.infinity);
-    final double rawSections   = rawHeaderH + rawArtH + rawInfoH + rawControlH;
-    final double scale         = rawTotal > safeH
-        ? sectionBudget / rawSections
-        : 1.0;
+    final double sectionBudget = (safeH - totalGaps).clamp(
+      1.0,
+      double.infinity,
+    );
+    final double rawSections = rawHeaderH + rawArtH + rawInfoH + rawControlH;
+    final double scale = rawTotal > safeH ? sectionBudget / rawSections : 1.0;
 
-    final double headerH  = rawHeaderH  * scale;
-    final double artH     = rawArtH     * scale;
-    final double infoH    = rawInfoH    * scale;
+    final double headerH = rawHeaderH * scale;
+    final double artH = rawArtH * scale;
+    final double infoH = rawInfoH * scale;
     final double controlH = rawControlH * scale;
 
-    final double artSize   = (artH * 0.92).clamp(50.0, 180.0);
+    final double artSize = (artH * 0.92).clamp(50.0, 180.0);
 
-    final double titleFs   = (infoH * 0.34).clamp(9.0, 15.0);
-    final double artistFs  = (infoH * 0.22).clamp(7.0, 11.0);
-    final double btnSize   = (controlH * 0.55).clamp(18.0, 36.0);
+    final double titleFs = (infoH * 0.34).clamp(9.0, 15.0);
+    final double artistFs = (infoH * 0.22).clamp(7.0, 11.0);
+    final double btnSize = (controlH * 0.55).clamp(18.0, 36.0);
     final double mainBtnSz = (controlH * 0.75).clamp(26.0, 48.0);
 
     return Positioned.fill(
@@ -1981,17 +2192,29 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-
               SizedBox(
                 height: headerH,
                 child: StreamBuilder<DateTime>(
-                  stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
+                  stream: Stream.periodic(
+                    const Duration(seconds: 1),
+                    (_) => DateTime.now(),
+                  ),
                   initialData: DateTime.now(),
                   builder: (context, snap) {
                     final now = snap.data ?? DateTime.now();
-                    final String hm = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-                    final List<String> weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-                    final String date = '${weekdays[now.weekday - 1]}  ${now.month}.${now.day.toString().padLeft(2, '0')}';
+                    final String hm =
+                        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+                    final List<String> weekdays = [
+                      'MON',
+                      'TUE',
+                      'WED',
+                      'THU',
+                      'FRI',
+                      'SAT',
+                      'SUN',
+                    ];
+                    final String date =
+                        '${weekdays[now.weekday - 1]}  ${now.month}.${now.day.toString().padLeft(2, '0')}';
                     return Padding(
                       padding: EdgeInsets.symmetric(horizontal: hPad),
                       child: Row(
@@ -2046,9 +2269,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         return ValueListenableBuilder<Duration>(
                           valueListenable: _positionNotifier,
                           builder: (context, pos, _) {
-                            final double prog = (_totalDuration != null &&
+                            final double prog =
+                                (_totalDuration != null &&
                                     _totalDuration!.inMilliseconds > 0)
-                                ? (pos.inMilliseconds / _totalDuration!.inMilliseconds).clamp(0.0, 1.0)
+                                ? (pos.inMilliseconds /
+                                          _totalDuration!.inMilliseconds)
+                                      .clamp(0.0, 1.0)
                                 : 0.0;
                             return SizedBox(
                               width: artSize,
@@ -2064,7 +2290,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                       color: _lpColor,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.5),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.5,
+                                          ),
                                           blurRadius: 16,
                                           spreadRadius: 2,
                                         ),
@@ -2081,7 +2309,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                         color: _bgColor,
                                         image: _albumArtBytes != null
                                             ? DecorationImage(
-                                                image: MemoryImage(_albumArtBytes!),
+                                                image: MemoryImage(
+                                                  _albumArtBytes!,
+                                                ),
                                                 fit: BoxFit.cover,
                                               )
                                             : null,
@@ -2095,7 +2325,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                       shape: BoxShape.circle,
                                       color: const Color(0xFFD4AF37),
                                       boxShadow: const [
-                                        BoxShadow(color: Colors.black45, blurRadius: 4),
+                                        BoxShadow(
+                                          color: Colors.black45,
+                                          blurRadius: 4,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -2105,7 +2338,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     child: CircularProgressIndicator(
                                       value: prog,
                                       strokeWidth: artSize * 0.025,
-                                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                      backgroundColor: Colors.white.withValues(
+                                        alpha: 0.08,
+                                      ),
                                       valueColor: AlwaysStoppedAnimation<Color>(
                                         _barColor.withValues(alpha: 0.75),
                                       ),
@@ -2173,7 +2408,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             ),
                           ),
                           child: Icon(
-                            _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            _isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
                             color: Colors.white,
                             size: mainBtnSz * 0.55,
                           ),
@@ -2206,8 +2443,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                   vol < 0.05
                                       ? Icons.volume_off_rounded
                                       : vol < 0.5
-                                          ? Icons.volume_down_rounded
-                                          : Icons.volume_up_rounded,
+                                      ? Icons.volume_down_rounded
+                                      : Icons.volume_up_rounded,
                                   color: _barColor,
                                   size: btnSize * 0.7,
                                 ),
@@ -2252,12 +2489,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double barW = (safeW - hPad * 2).clamp(1.0, double.infinity);
 
     const double progressBarH = 40.0;
-    final double titleLineH   = titleFs * 1.3;
-    final double artistLineH  = artistFs * 1.3;
-    final double totalFixed   = titleLineH + artistLineH + progressBarH;
-    final double remainH      = (infoH - totalFixed).clamp(0.0, double.infinity);
-    final double gapA         = (remainH * 0.35).clamp(0.0, 6.0);
-    final double gapB         = (remainH * 0.65).clamp(0.0, 10.0);
+    final double titleLineH = titleFs * 1.3;
+    final double artistLineH = artistFs * 1.3;
+    final double totalFixed = titleLineH + artistLineH + progressBarH;
+    final double remainH = (infoH - totalFixed).clamp(0.0, double.infinity);
+    final double gapA = (remainH * 0.35).clamp(0.0, 6.0);
+    final double gapB = (remainH * 0.65).clamp(0.0, 10.0);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2318,10 +2555,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             barColor: _barColor,
             onSeek: (ratio) {
               PlayerLogic.seekTo(ratio);
-              final dur = _totalDuration ?? audioHandler.mediaItem.value?.duration;
+              final dur =
+                  _totalDuration ?? audioHandler.mediaItem.value?.duration;
               if (dur != null && dur.inMilliseconds > 0) {
                 _positionNotifier.value = Duration(
-                    milliseconds: (dur.inMilliseconds * ratio).toInt());
+                  milliseconds: (dur.inMilliseconds * ratio).toInt(),
+                );
               }
             },
           ),
@@ -2334,8 +2573,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // 기존 자유 배치 레이아웃
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildLegacyLayout(
-    Size size, PlayerConfig config,
-    bool isPortrait, bool isSpecialMode,
+    Size size,
+    PlayerConfig config,
+    bool isPortrait,
+    bool isSpecialMode,
   ) {
     final double leftPadding = size.width * 0.08;
     final double safeLeftDx = (size.width * 0.85 / 2) + leftPadding;
@@ -2343,14 +2584,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     double finalContentDx = isSpecialMode
         ? config.titlePos.dx
         : isPortrait
-            ? safeLeftDx
-            : config.titlePos.dx;
+        ? safeLeftDx
+        : config.titlePos.dx;
 
     double finalContentWidth = isSpecialMode
         ? size.width * 0.6
         : isPortrait
-            ? size.width * 0.85
-            : config.progressBarWidth;
+        ? size.width * 0.85
+        : config.progressBarWidth;
 
     return Positioned.fill(
       child: Stack(
@@ -2403,13 +2644,16 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               });
                             }
                             try {
-                              const p =
-                                  MethodChannel('com.glasnyl.player/media_control');
-                              final r = await p.invokeMethod('getCurrentStatus');
+                              const p = MethodChannel(
+                                'com.glasnyl.player/media_control',
+                              );
+                              final r = await p.invokeMethod(
+                                'getCurrentStatus',
+                              );
                               if (r?['position'] != null) {
                                 _positionNotifier.value = Duration(
-                                    milliseconds:
-                                        (r['position'] as num).toInt());
+                                  milliseconds: (r['position'] as num).toInt(),
+                                );
                               }
                             } catch (_) {}
                           });
@@ -2420,11 +2664,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     );
                   }
 
-                  final double progress = (_totalDuration != null &&
+                  final double progress =
+                      (_totalDuration != null &&
                           _totalDuration!.inMilliseconds > 0)
                       ? (realTimePos.inMilliseconds /
-                              _totalDuration!.inMilliseconds)
-                          .clamp(0.0, 1.0)
+                                _totalDuration!.inMilliseconds)
+                            .clamp(0.0, 1.0)
                       : 0.0;
 
                   return RepaintBoundary(
@@ -2449,12 +2694,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         PlayerLogic.skipPrevious();
                       },
                       onSeek: (ratio) {
-                        final dur = _totalDuration ??
+                        final dur =
+                            _totalDuration ??
                             audioHandler.mediaItem.value?.duration;
                         if (dur != null && dur.inMilliseconds > 0) {
                           final target = Duration(
-                              milliseconds:
-                                  (dur.inMilliseconds * ratio).round());
+                            milliseconds: (dur.inMilliseconds * ratio).round(),
+                          );
                           _handleSeek(target);
                           PlayerLogic.seekTo(ratio);
                         }
@@ -2468,10 +2714,13 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
           _buildEdit(
             Offset(finalContentDx, config.titlePos.dy),
-            finalContentWidth, config.titleSize * 1.5,
+            finalContentWidth,
+            config.titleSize * 1.5,
             (d) => config.titlePos += d,
-            (s) => config.titleSize =
-                (config.titleSize + s * 0.1).clamp(20.0, 80.0),
+            (s) => config.titleSize = (config.titleSize + s * 0.1).clamp(
+              20.0,
+              80.0,
+            ),
             ClipRect(
               child: SizedBox(
                 width: finalContentWidth > 0 ? finalContentWidth : 200,
@@ -2494,13 +2743,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
           _buildEdit(
             Offset(finalContentDx, config.artistPos.dy),
-            finalContentWidth, 40,
+            finalContentWidth,
+            40,
             (d) => config.artistPos += d,
-            (s) => config.artistSize =
-                (config.artistSize + s * 0.1).clamp(10.0, 40.0),
+            (s) => config.artistSize = (config.artistSize + s * 0.1).clamp(
+              10.0,
+              40.0,
+            ),
             Align(
-              alignment:
-                  isPortrait ? Alignment.centerLeft : Alignment.center,
+              alignment: isPortrait ? Alignment.centerLeft : Alignment.center,
               child: ArtistTextWidget(
                 artist: _currentArtist,
                 fontSize: config.artistSize,
@@ -2510,10 +2761,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
 
           _buildEdit(
-            config.progressBarPos, config.progressBarWidth, 40,
+            config.progressBarPos,
+            config.progressBarWidth,
+            40,
             (d) => config.progressBarPos += d,
-            (s) => config.progressBarWidth =
-                (config.progressBarWidth + s).clamp(100.0, size.width),
+            (s) => config.progressBarWidth = (config.progressBarWidth + s)
+                .clamp(100.0, size.width),
             SizedBox(
               key: _progressKey,
               width: config.progressBarWidth.clamp(1.0, double.infinity),
@@ -2523,12 +2776,12 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 barColor: _barColor,
                 onSeek: (ratio) {
                   PlayerLogic.seekTo(ratio);
-                  final dur = _totalDuration ??
-                      audioHandler.mediaItem.value?.duration;
+                  final dur =
+                      _totalDuration ?? audioHandler.mediaItem.value?.duration;
                   if (dur != null && dur.inMilliseconds > 0) {
                     _positionNotifier.value = Duration(
-                        milliseconds:
-                            (dur.inMilliseconds * ratio).toInt());
+                      milliseconds: (dur.inMilliseconds * ratio).toInt(),
+                    );
                   }
                 },
               ),
@@ -2536,8 +2789,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
 
           _buildEdit(
-            config.prevButtonPos, 60, 60,
-            (d) => config.prevButtonPos += d, (_) {},
+            config.prevButtonPos,
+            60,
+            60,
+            (d) => config.prevButtonPos += d,
+            (_) {},
             PlayButtonsWidget.buildSideBtn(
               icon: Icons.skip_previous_rounded,
               onTap: PlayerLogic.skipPrevious,
@@ -2545,8 +2801,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
 
           _buildEdit(
-            config.playButtonsPos, 90, 90,
-            (d) => config.playButtonsPos += d, (_) {},
+            config.playButtonsPos,
+            90,
+            90,
+            (d) => config.playButtonsPos += d,
+            (_) {},
             PlayButtonsWidget.buildMainPlayBtn(
               isPlaying: _isPlaying,
               activeColor: _barColor,
@@ -2573,8 +2832,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           ),
 
           _buildEdit(
-            config.nextButtonPos, 60, 60,
-            (d) => config.nextButtonPos += d, (_) {},
+            config.nextButtonPos,
+            60,
+            60,
+            (d) => config.nextButtonPos += d,
+            (_) {},
             PlayButtonsWidget.buildSideBtn(
               icon: Icons.skip_next_rounded,
               onTap: PlayerLogic.skipNext,
@@ -2586,7 +2848,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   Widget _buildEdit(
-    Offset pos, double w, double h,
+    Offset pos,
+    double w,
+    double h,
     Function(Offset) onDrag,
     Function(double) onResize,
     Widget child,
@@ -2596,7 +2860,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       top: pos.dy - (h / 2),
       child: EditableElement(
         isEditMode: isEditMode,
-        width: w, height: h,
+        width: w,
+        height: h,
         onDrag: (d) => setState(() => onDrag(d)),
         onResizeDelta: (s) => setState(() => onResize(s)),
         child: child,
@@ -2657,12 +2922,12 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
   @override
   void initState() {
     super.initState();
-    _baseSize    = (widget.size * 0.055).clamp(11.0, 15.0);
+    _baseSize = (widget.size * 0.055).clamp(11.0, 15.0);
     _currentSize = (widget.size * 0.075).clamp(14.0, 20.0);
-    _itemExtent  = _currentSize * 2.8;
+    _itemExtent = _currentSize * 2.8;
 
-    _basePosition    = widget.currentPosition;
-    _lastIndex       = _calculateCurrentIndex(_basePosition);
+    _basePosition = widget.currentPosition;
+    _lastIndex = _calculateCurrentIndex(_basePosition);
     _maxIndexReached = _lastIndex;
 
     final double initOffset = _lastIndex > 0
@@ -2686,39 +2951,47 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
     super.didUpdateWidget(old);
     if (widget.isPlaying != old.isPlaying) {
       if (widget.isPlaying) {
-        _basePosition     = widget.currentPosition;
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
         if (!_ticker.isTicking) _ticker.start();
       } else {
         _ticker.stop();
-        _basePosition     = widget.currentPosition;
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
       }
     }
     if (widget.currentPosition != old.currentPosition) {
       final estimatedNow = _basePosition + _elapsedSinceSync;
       final bool isSeek =
-          (widget.currentPosition - old.currentPosition).abs().inMilliseconds > 300 ||
+          (widget.currentPosition - old.currentPosition).abs().inMilliseconds >
+              300 ||
           widget.currentPosition < old.currentPosition;
-      if (isSeek || (widget.currentPosition - estimatedNow).abs() > const Duration(milliseconds: 500)) {
-        _basePosition     = widget.currentPosition;
+      if (isSeek ||
+          (widget.currentPosition - estimatedNow).abs() >
+              const Duration(milliseconds: 500)) {
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
-        _lastTickerCheck  = Duration.zero;
-        if (_ticker.isTicking) { _ticker.stop(); _ticker.start(); }
+        _lastTickerCheck = Duration.zero;
+        if (_ticker.isTicking) {
+          _ticker.stop();
+          _ticker.start();
+        }
         int newIdx = _calculateCurrentIndex(widget.currentPosition);
-        _lastIndex       = newIdx;
+        _lastIndex = newIdx;
         _maxIndexReached = newIdx;
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(
-            _offsetForIndex(newIdx >= 0 ? newIdx : 0).clamp(0.0, double.infinity),
+            _offsetForIndex(
+              newIdx >= 0 ? newIdx : 0,
+            ).clamp(0.0, double.infinity),
           );
         }
       }
     }
     if (widget.lyrics != old.lyrics) {
-      _basePosition     = widget.currentPosition;
+      _basePosition = widget.currentPosition;
       _elapsedSinceSync = Duration.zero;
-      _lastIndex       = -1;
+      _lastIndex = -1;
       _maxIndexReached = -1;
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
     }
@@ -2727,16 +3000,18 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _basePosition     = widget.currentPosition;
+      _basePosition = widget.currentPosition;
       _elapsedSinceSync = Duration.zero;
       int newIdx = _calculateCurrentIndex(_basePosition);
-      _lastIndex       = newIdx;
+      _lastIndex = newIdx;
       _maxIndexReached = newIdx;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(
-            _offsetForIndex(newIdx >= 0 ? newIdx : 0).clamp(0.0, double.infinity),
+            _offsetForIndex(
+              newIdx >= 0 ? newIdx : 0,
+            ).clamp(0.0, double.infinity),
           );
         }
       });
@@ -2749,7 +3024,8 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
 
   void _checkAndScroll() {
     if (_isUserInteracting || !_scrollController.hasClients) return;
-    final precisePos = _basePosition + _elapsedSinceSync + const Duration(milliseconds: 50);
+    final precisePos =
+        _basePosition + _elapsedSinceSync + const Duration(milliseconds: 50);
     int currentIndex = _calculateCurrentIndex(precisePos);
     if (currentIndex != -1 && currentIndex != _lastIndex) {
       final skipped = currentIndex - _lastIndex;
@@ -2761,8 +3037,11 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
       if (skipped >= 2) {
         _scrollController.jumpTo(offset);
       } else {
-        _scrollController.animateTo(offset,
-            duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+        _scrollController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
       }
     }
   }
@@ -2780,7 +3059,8 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
         hi = mid - 1;
       }
     }
-    if (index < _maxIndexReached && _maxIndexReached != -1) return _maxIndexReached;
+    if (index < _maxIndexReached && _maxIndexReached != -1)
+      return _maxIndexReached;
     return index;
   }
 
@@ -2790,9 +3070,9 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
     _debounceTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() => _isUserInteracting = false);
-        _basePosition     = widget.currentPosition;
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
-        _maxIndexReached  = _calculateCurrentIndex(_basePosition);
+        _maxIndexReached = _calculateCurrentIndex(_basePosition);
         _checkAndScroll();
       }
     });
@@ -2813,8 +3093,13 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
       return Center(
         child: widget.lyricStatus == LyricStatus.loading
             ? const SizedBox(
-                width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white54,
+                ),
+              )
             : Text(
                 widget.lyricStatus == LyricStatus.noLyrics
                     ? 'No lyrics found'
@@ -2838,30 +3123,32 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
       child: ListView.builder(
         controller: _scrollController,
         physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.symmetric(vertical: widget.size / 2 - _itemExtent / 2),
+        padding: EdgeInsets.symmetric(
+          vertical: widget.size / 2 - _itemExtent / 2,
+        ),
         itemCount: widget.lyrics.length,
         itemExtent: _itemExtent,
         itemBuilder: (context, index) {
           final isCurrent = index == _lastIndex;
           return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                style: TextStyle(
-                  color: isCurrent
-                      ? Colors.white.withValues(alpha: 1.0)
-                      : Colors.white.withValues(alpha: 0.28),
-                  fontSize: isCurrent ? _currentSize : _baseSize,
-                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                  height: 1.3,
-                ),
-                child: Text(
-                  widget.lyrics[index].text ?? '',
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: TextStyle(
+                color: isCurrent
+                    ? Colors.white.withValues(alpha: 1.0)
+                    : Colors.white.withValues(alpha: 0.28),
+                fontSize: isCurrent ? _currentSize : _baseSize,
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                height: 1.3,
               ),
+              child: Text(
+                widget.lyrics[index].text ?? '',
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           );
         },
       ),
@@ -2977,7 +3264,12 @@ class _GlassTrackPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final RRect inactiveRRect = RRect.fromLTRBR(
-        left, cy - th / 2, right, cy + th / 2, r);
+      left,
+      cy - th / 2,
+      right,
+      cy + th / 2,
+      r,
+    );
     canvas.drawRRect(inactiveRRect, inactivePaint);
 
     final Paint borderPaint = Paint()
@@ -2997,7 +3289,12 @@ class _GlassTrackPainter extends CustomPainter {
         ..style = PaintingStyle.fill;
 
       final RRect activeRRect = RRect.fromLTRBR(
-          left, cy - th / 2, fillX, cy + th / 2, r);
+        left,
+        cy - th / 2,
+        fillX,
+        cy + th / 2,
+        r,
+      );
       canvas.drawRRect(activeRRect, activePaint);
     }
 

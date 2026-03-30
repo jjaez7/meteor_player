@@ -24,6 +24,9 @@ class PlayerAppBar extends StatelessWidget {
   final VoidCallback onConcertModeToggled;
   final bool isConcertMode;
 
+  // 📸 공유 카드 콜백
+  final VoidCallback onShareCard;
+
   const PlayerAppBar({
     super.key,
     required this.isPip,
@@ -42,6 +45,7 @@ class PlayerAppBar extends StatelessWidget {
     required this.onLockToggle,
     required this.onPassUpdated,
     required this.onConcertModeToggled,
+    required this.onShareCard,
     this.isConcertMode = false,
   });
 
@@ -84,6 +88,7 @@ class PlayerAppBar extends StatelessWidget {
                 value: val,
                 onLockEnabled: onLockToggle,
                 onConcertModeToggled: onConcertModeToggled,
+                onShareCard: onShareCard, // ← 추가
               ),
               itemBuilder: (context) => [
                 _menuItem("PiP Mode", Icons.picture_in_picture_alt_rounded, "pip"),
@@ -95,6 +100,8 @@ class PlayerAppBar extends StatelessWidget {
                   "concert",
                   isHighlight: !isConcertMode,
                 ),
+                // 📸 공유 카드
+                _menuItem("Share Card", Icons.ios_share_rounded, "share"),
               ],
             ),
           ),

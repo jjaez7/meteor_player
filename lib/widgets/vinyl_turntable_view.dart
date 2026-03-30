@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'vinyl_component.dart';
 import 'dart:ui' as ui;
 
