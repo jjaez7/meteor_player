@@ -37,7 +37,7 @@ class AdService {
       final String? installTimeStr = prefs.getString(_installTimeKey);
       if (installTimeStr != null) {
         final installTime = DateTime.tryParse(installTimeStr);
-        if (installTime != null && DateTime.now().difference(installTime).inHours < 1) {
+        if (installTime != null && DateTime.now().difference(installTime).inMinutes < 60) {
           return true;
         }
       }
@@ -45,7 +45,7 @@ class AdService {
       final String? lastWatch = prefs.getString(_adKey);
       if (lastWatch != null) {
         final lastWatchDate = DateTime.tryParse(lastWatch);
-        if (lastWatchDate != null && DateTime.now().difference(lastWatchDate).inHours < 9) {
+        if (lastWatchDate != null && DateTime.now().difference(lastWatchDate).inMinutes < 540) {
           return true;
         }
       }

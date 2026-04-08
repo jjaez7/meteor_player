@@ -281,34 +281,37 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // 접근 가드
   // ──────────────────────────────────────────────────────────────────────
   void _startAccessGuardian() {
-    _accessCheckTimer?.cancel();
-    _accessCheckTimer = Timer.periodic(const Duration(seconds: 10), (t) async {
-      if (_isPassDialogShowing || isEditMode || _isPipMode) return;
+  _accessCheckTimer?.cancel();
+  _accessCheckTimer = Timer.periodic(const Duration(seconds: 10), (t) async {
+    if (_isPassDialogShowing || isEditMode || _isPipMode) return;
 
-      final now = DateTime.now();
-      bool isFullAccess;
-      if (_cachedAccessResult != null &&
-          _lastAccessCheck != null &&
-          now.difference(_lastAccessCheck!) < const Duration(seconds: 30)) {
-        isFullAccess = _cachedAccessResult!;
-      } else {
-        isFullAccess = await AdService.isFullAccess();
-        _cachedAccessResult = isFullAccess;
-        _lastAccessCheck = now;
-      }
+    final now = DateTime.now();
+    bool isFullAccess;
 
-      if (!isFullAccess && mounted) {
-        _isPassDialogShowing = true;
-        showPassDialog(context, () {
-          if (mounted) {
-            _cachedAccessResult = null;
-            setState(() => _isPassDialogShowing = false);
-            _fetchInitialStatus();
-          }
-        });
-      }
-    });
-  }
+    // false(패스 없음)일 때만 캐시 사용
+    // true(패스 있음)는 항상 실제 확인 → 만료 즉시 감지
+    if (_cachedAccessResult == false &&
+        _lastAccessCheck != null &&
+        now.difference(_lastAccessCheck!) < const Duration(seconds: 30)) {
+      isFullAccess = false;
+    } else {
+      isFullAccess = await AdService.isFullAccess();
+      _cachedAccessResult = isFullAccess;
+      _lastAccessCheck = now;
+    }
+
+    if (!isFullAccess && mounted) {
+      _isPassDialogShowing = true;
+      showPassDialog(context, () {
+        if (mounted) {
+          _cachedAccessResult = null;
+          setState(() => _isPassDialogShowing = false);
+          _fetchInitialStatus();
+        }
+      });
+    }
+  });
+}
 
   // ──────────────────────────────────────────────────────────────────────
   // 🎸 콘서트 모드 토글
