@@ -1,6 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'release_notes.dart';
 
 // 무제한 활성화 비밀 코드 (원하는 값으로 변경하세요)
 const String _secretCode = "ZNLABS2025";
@@ -14,7 +17,7 @@ void showCreatorDialog(BuildContext context, {VoidCallback? onUnlocked}) {
 
   final List<String> betaTesters = [
     "Jaewon Jo", "Myungwan Jeong", "Jonghyun Yang", "Siwon Park",
-    "Sieun Park", "Hayoon Kim", "Junho Lee", "Seoyeon Choi",
+    "Sieun Park", "Hayoon Kim", "Junho Lee", "Simhyeok Lee",
     "Lucas Bennett", "Sofia Marchetti", "Ethan Clarke", "Yuki Tanaka"
   ];
 
@@ -88,6 +91,13 @@ class _CreatorDialogState extends State<_CreatorDialog> {
       setState(() {
         _errorMsg = "Invalid code.";
       });
+    }
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -321,7 +331,63 @@ class _CreatorDialogState extends State<_CreatorDialog> {
                     color: Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 20),
+
+                // SNS 링크 버튼
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: [
+                    _buildSnsButton(
+                      icon: FontAwesomeIcons.instagram,
+                      label: "@znlabs_official",
+                      url: "https://instagram.com/znlabs_official",
+                      accentColor: widget.accentColor,
+                      onTap: _launchUrl,
+                    ),
+                    _buildSnsButton(
+                      icon: FontAwesomeIcons.github,
+                      label: "jjaez7",
+                      url: "https://github.com/jjaez7",
+                      accentColor: widget.accentColor,
+                      onTap: _launchUrl,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // 업데이트 노트 버튼
+                GestureDetector(
+                  onTap: () => showReleaseNotesDialog(context),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.history_rounded, size: 14, color: Colors.white54),
+                        const SizedBox(width: 7),
+                        const Text(
+                          "UPDATE NOTES",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white54,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
 
                 // 닫기 버튼
                 _buildGlassButton(context, "CLOSE", widget.accentColor),
@@ -393,6 +459,42 @@ Widget _buildTesterChip(String name) {
     child: Text(
       name,
       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.white70),
+    ),
+  );
+}
+
+Widget _buildSnsButton({
+  required FaIconData icon,
+  required String label,
+  required String url,
+  required Color accentColor,
+  required Future<void> Function(String) onTap,
+}) {
+  return GestureDetector(
+    onTap: () => onTap(url),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(icon, size: 13, color: accentColor),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: accentColor,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }

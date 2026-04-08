@@ -15,7 +15,7 @@ plugins {
 }
 
 android {
-    namespace = "com.glasnyl.player"
+    namespace = "com.glasnyl.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -39,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.glasnyl.player"
+        applicationId = "com.glasnyl.app"
         minSdk = flutter.minSdkVersion 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

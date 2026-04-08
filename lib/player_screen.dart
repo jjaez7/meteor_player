@@ -31,6 +31,8 @@ import 'menu/dialog_pass.dart';
 import 'concert_effects.dart';
 import 'widgets/now_playing_card.dart';
 import 'services/share_service.dart';
+import 'menu/release_notes.dart';
+import 'menu/review_prompt.dart';
 
 Timer? _accessCheckTimer;
 bool _isPassDialogShowing = false;
@@ -113,9 +115,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   Color _playBtnColor = const Color(0xFF735DA5);
 
   // ── 채널
-  static const _pipChannel = MethodChannel('com.glasnyl.player/pip_status');
+  static const _pipChannel = MethodChannel('com.glasnyl.app/pip_status');
   static const _volumeChannel = EventChannel(
-    'com.glasnyl.player/volume_events',
+    'com.glasnyl.app/volume_events',
   );
   final GlobalKey _progressKey = GlobalKey();
   final GlobalKey _shareCardKey = GlobalKey();
@@ -230,7 +232,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       Future.delayed(const Duration(milliseconds: 2000), () {
         if (mounted) _fetchInitialStatus();
       });
+      showReleaseNotesIfUpdated(context);
+      showReviewPromptIfNeeded(context);
     });
+
+    
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -631,7 +637,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           await Future.delayed(const Duration(milliseconds: 800));
           if (!mounted) return;
           try {
-            const platform = MethodChannel('com.glasnyl.player/media_control');
+            const platform = MethodChannel('com.glasnyl.app/media_control');
             final dynamic artResult = await platform.invokeMethod(
               'getAlbumArt',
             );
@@ -665,7 +671,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     });
 
     _mediaStatusSub?.cancel();
-    _mediaStatusSub = const EventChannel('com.glasnyl.player/media_status')
+    _mediaStatusSub = const EventChannel('com.glasnyl.app/media_status')
         .receiveBroadcastStream()
         .listen(
           (status) {
@@ -692,7 +698,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // ──────────────────────────────────────────────────────────────────────
   Future<void> _fetchInitialStatus() async {
     try {
-      const platform = MethodChannel('com.glasnyl.player/media_control');
+      const platform = MethodChannel('com.glasnyl.app/media_control');
       final dynamic result = await platform.invokeMethod('getCurrentStatus');
 
       if (result != null && mounted) {
@@ -1052,7 +1058,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                   }
                                   try {
                                     const p = MethodChannel(
-                                      'com.glasnyl.player/media_control',
+                                      'com.glasnyl.app/media_control',
                                     );
                                     final r = await p.invokeMethod(
                                       'getCurrentStatus',
@@ -1198,7 +1204,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   Future<void> _syncLyricsPosition() async {
     try {
-      const p = MethodChannel('com.glasnyl.player/media_control');
+      const p = MethodChannel('com.glasnyl.app/media_control');
       final r = await p.invokeMethod('getCurrentStatus');
       if (r?['position'] != null && mounted) {
         _positionNotifier.value = Duration(
@@ -1648,7 +1654,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                     }
                                     try {
                                       const p = MethodChannel(
-                                        'com.glasnyl.player/media_control',
+                                        'com.glasnyl.app/media_control',
                                       );
                                       final r = await p.invokeMethod(
                                         'getCurrentStatus',
@@ -2645,7 +2651,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             }
                             try {
                               const p = MethodChannel(
-                                'com.glasnyl.player/media_control',
+                                'com.glasnyl.app/media_control',
                               );
                               final r = await p.invokeMethod(
                                 'getCurrentStatus',
