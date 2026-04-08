@@ -35,6 +35,7 @@ const List<ReleaseNote> kReleaseNotes = [
     date: "2026-04-08",
     items: [
       ReleaseNoteItem(NoteType.feature, "GLASNYL launch note has been released."),
+      ReleaseNoteItem(NoteType.improvement, "Lyrics panel now opens with 3 taps on the clock (was 5)."),
     ],
   ),
   ReleaseNote(
@@ -128,7 +129,7 @@ class _ReleaseNotesDialog extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   const Text(
-                    "업데이트 노트",
+                    "UPDATE NOTES",
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

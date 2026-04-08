@@ -1189,7 +1189,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void _handleClockTap() {
     _clockTapTimer?.cancel();
     _clockTapCount++;
-    if (_clockTapCount >= 5) {
+    if (_clockTapCount >= 3) {
       _clockTapCount = 0;
       HapticFeedback.mediumImpact();
       final bool turningOn = !_landscapeShowLyrics;
@@ -1443,7 +1443,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void _handlePortraitClockTap() {
     _portraitClockTapTimer?.cancel();
     _portraitClockTapCount++;
-    if (_portraitClockTapCount >= 5) {
+    if (_portraitClockTapCount >= 3) {
       _portraitClockTapCount = 0;
       HapticFeedback.mediumImpact();
       final bool turningOn = !_portraitShowLyrics;
