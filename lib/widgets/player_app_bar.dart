@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../menu/menu_main.dart';
 import '../features/left_menu_actions.dart';
+import 'essential_view.dart'; // 🎧 에센셜 모드 토글 버튼
 
 class PlayerAppBar extends StatelessWidget {
   final bool isPip;
@@ -27,6 +28,10 @@ class PlayerAppBar extends StatelessWidget {
   // 📸 공유 카드 콜백
   final VoidCallback onShareCard;
 
+  // 🎧 에센셜 모드 토글 콜백
+  final VoidCallback onEssentialModeToggled;
+  final bool isEssentialMode;
+
   const PlayerAppBar({
     super.key,
     required this.isPip,
@@ -46,7 +51,9 @@ class PlayerAppBar extends StatelessWidget {
     required this.onPassUpdated,
     required this.onConcertModeToggled,
     required this.onShareCard,
+    required this.onEssentialModeToggled,
     this.isConcertMode = false,
+    this.isEssentialMode = false,
   });
 
   @override
@@ -123,12 +130,20 @@ class PlayerAppBar extends StatelessWidget {
             ),
           ),
 
-          // [우측] 리셋 & 설정 메뉴
+          // [우측] 에센셜 토글 & 리셋 & 설정 메뉴
           Align(
             alignment: Alignment.centerRight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 🎧 에센셜 모드 토글 버튼
+                EssentialToggleButton(
+                  isEssentialMode: isEssentialMode,
+                  onToggle: onEssentialModeToggled,
+                  accentColor: playBtnColor,
+                ),
+                const SizedBox(width: 4),
+
                 if (isEditMode)
                   IconButton(
                     icon: const Icon(Icons.refresh_rounded, color: Colors.redAccent),

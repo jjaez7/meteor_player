@@ -33,6 +33,7 @@ import 'widgets/now_playing_card.dart';
 import 'services/share_service.dart';
 import 'menu/release_notes.dart';
 import 'menu/review_prompt.dart';
+import 'widgets/essential_view.dart'; // 🎧 에센셜 모드
 
 Timer? _accessCheckTimer;
 bool _isPassDialogShowing = false;
@@ -54,6 +55,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // 🎸 콘서트 모드
   bool _isConcertMode = false;
   final _concertKey = GlobalKey<ConcertLayerState>();
+
+  // 🎧 에센셜 모드
+  bool _isEssentialMode = false;
 
   // ── 가로 모드 하단 패널 토글 (볼륨 ↔ 가사), 기본: 볼륨
   bool _landscapeShowLyrics = false;
@@ -325,6 +329,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
       });
     }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // 🎧 에센셜 모드 토글
+  // ──────────────────────────────────────────────────────────────────────
+  void _handleEssentialModeToggle() {
+    HapticFeedback.lightImpact();
+    setState(() => _isEssentialMode = !_isEssentialMode);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -914,6 +926,42 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     ),
                   ),
 
+                // 🎧 에센셜 모드 레이어 (잠금 화면 및 PiP 제외)
+                // 각 레이아웃 패널이 AnimatedOpacity로 자체 페이드되므로
+                // 여기서는 Essential 컨텐츠만 올립니다 (오버레이 없음)
+                if (!_isPipMode && !_isScreenLocked) ...[
+                  IgnorePointer(
+                    ignoring: !_isEssentialMode,
+                    child: AnimatedOpacity(
+                      opacity: _isEssentialMode ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 450),
+                      curve: Curves.easeInOut,
+                      child: EssentialView(
+                        albumArtBytes: _albumArtBytes,
+                        title: _currentTitle,
+                        artist: _currentArtist,
+                        isPlaying: _isPlaying,
+                        accentColor: _playBtnColor,
+                        textColor: _textColor,
+                      ),
+                    ),
+                  ),
+                  IgnorePointer(
+                    ignoring: !_isEssentialMode,
+                    child: AnimatedOpacity(
+                      opacity: _isEssentialMode ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 450),
+                      curve: Curves.easeInOut,
+                      child: EssentialMiniInfo(
+                        albumArtBytes: _albumArtBytes,
+                        title: _currentTitle,
+                        artist: _currentArtist,
+                        accentColor: _playBtnColor,
+                      ),
+                    ),
+                  ),
+                ],
+
                 if (!_isPipMode)
                   Positioned(
                     top: 0,
@@ -951,6 +999,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           onConcertModeToggled: _handleConcertModeToggle,
                           isConcertMode: _isConcertMode,
                           onShareCard: _handleShareCard,
+                          // 🎧 에센셜 모드 콜백 전달
+                          onEssentialModeToggled: _handleEssentialModeToggle,
+                          isEssentialMode: _isEssentialMode,
                         ),
                       ),
                     ),
@@ -1024,7 +1075,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
           children: [
             Expanded(
               flex: 65,
-              child: Column(
+              child: AnimatedOpacity(
+                opacity: _isEssentialMode ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeInOut,
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   GestureDetector(
@@ -1144,14 +1199,19 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     ),
                   ],
                 ],
-              ),
+                ), // Column (left)
+              ), // AnimatedOpacity (left)
             ),
 
             SizedBox(width: hPad),
 
             Expanded(
               flex: 35,
-              child: LayoutBuilder(
+              child: AnimatedOpacity(
+                opacity: _isEssentialMode ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeInOut,
+                child: LayoutBuilder(
                 builder: (context, constraints) {
                   final double clockH =
                       (panelW * 0.14).clamp(16.0, 28.0) + 20.0;
@@ -1181,7 +1241,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     ],
                   );
                 },
-              ),
+                ), // LayoutBuilder
+              ), // AnimatedOpacity (right)
             ),
           ],
         ),
@@ -1611,7 +1672,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         children: [
           SizedBox(height: topPad),
 
-          SizedBox(
+          AnimatedOpacity(
+            opacity: _isEssentialMode ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeInOut,
+            child: SizedBox(
             height: turntableH,
             child: _portraitShowLyrics
                 ? Padding(
@@ -1725,25 +1790,36 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       ),
                     ),
                   ),
-          ),
+            ), // SizedBox(turntable)
+          ), // AnimatedOpacity(turntable)
 
           SizedBox(height: gap),
 
-          SizedBox(
-            height: panelH,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 4),
-              child: _buildGlassInfoPanel(size, panelContentH),
+          AnimatedOpacity(
+            opacity: _isEssentialMode ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeInOut,
+            child: SizedBox(
+              height: panelH,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 4),
+                child: _buildGlassInfoPanel(size, panelContentH),
+              ),
             ),
           ),
 
           if (showPortraitClock) ...[
             SizedBox(height: clockGap),
-            SizedBox(
-              height: clockPanelH,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: hPad),
-                child: _buildPortraitClockPanel(size.width - hPad * 2),
+            AnimatedOpacity(
+              opacity: _isEssentialMode ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 450),
+              curve: Curves.easeInOut,
+              child: SizedBox(
+                height: clockPanelH,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
+                  child: _buildPortraitClockPanel(size.width - hPad * 2),
+                ),
               ),
             ),
           ],
