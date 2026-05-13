@@ -12,8 +12,9 @@ enum LyricStatus { loading, success, noLyrics, networkError, timeout }
 class LyricResult {
   final List<LyricLine> lyrics;
   final LyricStatus status;
+  final TrackMeta meta; // ← LRCLIB에서 파싱한 albumName, duration
 
-  LyricResult(this.lyrics, this.status);
+  LyricResult(this.lyrics, this.status, [this.meta = TrackMeta.empty]);
 }
 
 class LyricsService {
@@ -148,8 +149,12 @@ class LyricsService {
           if (synced != null && synced.isNotEmpty) {
             final parsed = parseLrc(synced);
             if (parsed.isNotEmpty) {
-              debugPrint("✅ [Fuzzy 성공] syncedLyrics (${parsed.length}줄)");
-              return LyricResult(parsed, LyricStatus.success);
+              final meta = TrackMeta(
+                albumName: item['albumName'] as String?,
+                durationSeconds: (item['duration'] as num?)?.toInt(),
+              );
+              debugPrint("✅ [Fuzzy 성공] syncedLyrics (${parsed.length}줄) album: ${meta.albumName}");
+              return LyricResult(parsed, LyricStatus.success, meta);
             }
           }
         }
@@ -158,8 +163,12 @@ class LyricsService {
           if (plain != null && plain.isNotEmpty) {
             final parsed = parseLrc(plain);
             if (parsed.isNotEmpty) {
-              debugPrint("✅ [Fuzzy 성공] plainLyrics (${parsed.length}줄)");
-              return LyricResult(parsed, LyricStatus.success);
+              final meta = TrackMeta(
+                albumName: item['albumName'] as String?,
+                durationSeconds: (item['duration'] as num?)?.toInt(),
+              );
+              debugPrint("✅ [Fuzzy 성공] plainLyrics (${parsed.length}줄) album: ${meta.albumName}");
+              return LyricResult(parsed, LyricStatus.success, meta);
             }
           }
         }
@@ -184,10 +193,20 @@ class LyricsService {
         final data = json.decode(utf8.decode(response.bodyBytes));
         final String? lrc = data['syncedLyrics'] ?? data['plainLyrics'];
 
+        // ── 메타데이터 파싱
+        final meta = TrackMeta(
+          albumName: data['albumName'] as String?,
+          durationSeconds: (data['duration'] as num?)?.toInt(),
+        );
+
         if (lrc != null && lrc.isNotEmpty) {
           final parsed = parseLrc(lrc);
-          debugPrint("✅ [Exact 성공] (${parsed.length}줄)");
-          return LyricResult(parsed, LyricStatus.success);
+          debugPrint("✅ [Exact 성공] (${parsed.length}줄) album: ${meta.albumName}");
+          return LyricResult(parsed, LyricStatus.success, meta);
+        }
+        // 가사는 없어도 메타만 있으면 noLyrics와 함께 반환
+        if (meta.albumName != null) {
+          return LyricResult([], LyricStatus.noLyrics, meta);
         }
       }
       return LyricResult([], LyricStatus.noLyrics);

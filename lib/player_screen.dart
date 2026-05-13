@@ -89,6 +89,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // ── 곡 정보
   String _currentTitle = "Ready to Play";
   String _currentArtist = "Artist NAME";
+  String? _currentAlbumName;
   Uint8List? _albumArtBytes;
   DateTime? _lastSyncTime;
 
@@ -187,6 +188,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         setState(() {
           _currentTitle = item.title;
           _currentArtist = (item.artist ?? "Unknown").toUpperCase();
+          _currentAlbumName = null;
           _lyrics = [];
           _lastFetchedSongId = "";
           _currentStatus = LyricStatus.loading;
@@ -495,6 +497,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         setState(() {
           _lyrics = result.lyrics;
           _currentStatus = result.status;
+          if (result.meta.albumName != null) {
+            _currentAlbumName = result.meta.albumName;
+          }
         });
       }
     } catch (e) {
@@ -940,23 +945,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         albumArtBytes: _albumArtBytes,
                         title: _currentTitle,
                         artist: _currentArtist,
+                        albumName: _currentAlbumName,
                         isPlaying: _isPlaying,
                         accentColor: _playBtnColor,
                         textColor: _textColor,
-                      ),
-                    ),
-                  ),
-                  IgnorePointer(
-                    ignoring: !_isEssentialMode,
-                    child: AnimatedOpacity(
-                      opacity: _isEssentialMode ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 450),
-                      curve: Curves.easeInOut,
-                      child: EssentialMiniInfo(
-                        albumArtBytes: _albumArtBytes,
-                        title: _currentTitle,
-                        artist: _currentArtist,
-                        accentColor: _playBtnColor,
                       ),
                     ),
                   ),

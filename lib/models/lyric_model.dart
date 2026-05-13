@@ -7,6 +7,16 @@ class LyricLine {
   LyricLine(this.time, this.text);
 }
 
+/// LRCLIB 응답에서 파싱한 트랙 메타데이터
+class TrackMeta {
+  final String? albumName;
+  final int? durationSeconds; // LRCLIB duration 필드 (초 단위)
+
+  const TrackMeta({this.albumName, this.durationSeconds});
+
+  static const empty = TrackMeta();
+}
+
 List<LyricLine> parseLrc(String lrc) {
   final List<LyricLine> lyrics = [];
   // 정규식: [00:00.00] 또는 [00:00.000] 형태 추출

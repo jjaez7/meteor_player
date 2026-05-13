@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +12,7 @@ import 'package:flutter/services.dart';
 //   • 배경은 기존 플레이어 배경 그대로 유지 (별도 오버레이 없음)
 //   • "ESSENTIAL" 레이블 — 화면 세로 중상단에 크게 중앙 배치
 //   • FFT 스펙트럼 — 레이블 바로 아래, 글자 너비보다 살짝 넓게
-//   • EssentialMiniInfo — 우측 상단 앨범아트 + 트랙 정보
+//   • 하단 _EssentialFooter — 제목 / 아티스트 / 앨범명(LRCLIB 메타)
 //   • AppBar용 EssentialToggleButton
 //
 // [시뮬레이션]
@@ -22,28 +21,22 @@ import 'package:flutter/services.dart';
 //   음악 느낌을 최대한 살립니다. 실제 데이터가 오면 자동 전환됩니다.
 //
 // [player_screen.dart 적용]
-//   if (_isEssentialMode && !_isPipMode && !_isScreenLocked) ...[
-//     EssentialView(
-//       albumArtBytes: _albumArtBytes,
-//       title: _currentTitle,
-//       artist: _currentArtist,
-//       isPlaying: _isPlaying,
-//       accentColor: _playBtnColor,
-//       textColor: _textColor,
-//     ),
-//     EssentialMiniInfo(
-//       albumArtBytes: _albumArtBytes,
-//       title: _currentTitle,
-//       artist: _currentArtist,
-//       accentColor: _playBtnColor,
-//     ),
-//   ],
+//   EssentialView(
+//     albumArtBytes: _albumArtBytes,
+//     title: _currentTitle,
+//     artist: _currentArtist,
+//     albumName: _currentAlbumName,
+//     isPlaying: _isPlaying,
+//     accentColor: _playBtnColor,
+//     textColor: _textColor,
+//   ),
 // ══════════════════════════════════════════════════════════════════════════════
 
 class EssentialView extends StatefulWidget {
   final Uint8List? albumArtBytes;
   final String title;
   final String artist;
+  final String? albumName;
   final bool isPlaying;
   final Color accentColor;
   final Color textColor;
@@ -53,6 +46,7 @@ class EssentialView extends StatefulWidget {
     required this.albumArtBytes,
     required this.title,
     required this.artist,
+    this.albumName,
     required this.isPlaying,
     required this.accentColor,
     required this.textColor,
@@ -309,6 +303,7 @@ class _EssentialViewState extends State<EssentialView>
                 child: _EssentialFooter(
                   title: widget.title,
                   artist: widget.artist,
+                  albumName: widget.albumName,
                   isPlaying: widget.isPlaying,
                   accentColor: widget.accentColor,
                 ),
@@ -342,7 +337,7 @@ class _EssentialLabel extends StatelessWidget {
         ),
         // 메인 레이블
         Text(
-          'ESSENTIAL',
+          'AESTHETIC',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.w900,
@@ -379,12 +374,14 @@ class _EssentialLabel extends StatelessWidget {
 class _EssentialFooter extends StatelessWidget {
   final String title;
   final String artist;
+  final String? albumName;
   final bool isPlaying;
   final Color accentColor;
 
   const _EssentialFooter({
     required this.title,
     required this.artist,
+    this.albumName,
     required this.isPlaying,
     required this.accentColor,
   });
@@ -443,119 +440,37 @@ class _EssentialFooter extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (albumName != null && albumName!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.album_rounded,
+                      size: 9,
+                      color: Colors.white.withValues(alpha: 0.28),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        albumName!,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.28),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.6,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
       ],
-    );
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// EssentialMiniInfo  —  우측 상단 미니 앨범아트 + 트랙 정보
-// ──────────────────────────────────────────────────────────────────────────────
-class EssentialMiniInfo extends StatelessWidget {
-  final Uint8List? albumArtBytes;
-  final String title;
-  final String artist;
-  final Color accentColor;
-
-  const EssentialMiniInfo({
-    super.key,
-    required this.albumArtBytes,
-    required this.title,
-    required this.artist,
-    required this.accentColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final double topPad = MediaQuery.of(context).padding.top + 54.0;
-    final double rightPad = MediaQuery.of(context).padding.right + 16.0;
-
-    return Positioned(
-      top: topPad,
-      right: rightPad,
-      child: RepaintBoundary(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 190),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.28),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  width: 0.8,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: SizedBox(
-                      width: 38,
-                      height: 38,
-                      child: albumArtBytes != null
-                          ? Image.memory(
-                              albumArtBytes!,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              filterQuality: FilterQuality.medium,
-                            )
-                          : Container(
-                              color: Colors.white.withValues(alpha: 0.10),
-                              child: Icon(
-                                Icons.music_note_rounded,
-                                color: accentColor,
-                                size: 20,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          artist,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.48),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
