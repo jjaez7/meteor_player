@@ -47,17 +47,31 @@ class ClassicVinylView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchInCurve: Curves.easeOutBack,
-      switchOutCurve: Curves.easeIn,
-      transitionBuilder: (child, animation) => FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(scale: animation, child: child),
-      ),
-      child: isLyricsMode
-          ? _buildLyricsCard()
-          : (isMinimalMode ? _buildMinimalArt() : _buildVinylDisk()),
+    // Stack + Offstage: _LyricsAutoScroller를 항상 살아있게 유지
+    // AnimatedSwitcher는 isLyricsMode 전환 시 dispose/mount 반복 → 싱크 리셋 문제 발생
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // ── 가사 카드 (항상 alive, isLyricsMode 아닐 때 숨김)
+        Offstage(
+          offstage: !isLyricsMode,
+          child: _buildLyricsCard(),
+        ),
+        // ── vinyl / minimal (isLyricsMode일 때 숨김)
+        Offstage(
+          offstage: isLyricsMode,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(scale: animation, child: child),
+            ),
+            child: isMinimalMode ? _buildMinimalArt() : _buildVinylDisk(),
+          ),
+        ),
+      ],
     );
   }
 

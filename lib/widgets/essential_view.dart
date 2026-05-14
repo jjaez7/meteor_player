@@ -17,10 +17,10 @@ import '../models/lyric_model.dart';
 //   • 주파수 힌트 텍스트 — 하단 SUB / MID / HI 레이블
 //   • 스펙트럼 미러 모드 — 위아래 반전 대칭으로 더 꽉 찬 느낌
 //
-// 변경점 (v3) — 가사 넘김 수정
-//   • _LyricsLineView: positionNotifier listener 단독 방식 → Ticker 보완 추가
-//   • LP 모드(_LandscapeLyricsScroller)와 동일하게 basePosition + 경과시간 추정
-//   • positionNotifier는 싱크 기준점 갱신 용도로만 사용
+// 변경점 (v3) — 가사 싱크 전면 재작성
+//   • _LyricsLineView → _AestheticLyricsScroller 로 교체
+//   • LP 모드(_LyricsAutoScroller)와 완전히 동일한 싱크 로직 사용
+//   • 디자인만 aesthetic (prev/current/next 3줄 + 글로우 pulse) 유지
 //
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -970,14 +970,11 @@ class EssentialToggleButton extends StatelessWidget {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// _LyricsLineView  —  현재 재생 위치 기준 가사 한 줄 표시
-//
-// LP 모드(_LyricsAutoScroller)와 동일한 방식:
-//   • _basePosition + _elapsedSinceSync 로 정밀 위치 추정
-//   • positionNotifier listener: 싱크 기준점 갱신 + drift/seek 감지만 담당
-//   • Ticker: 25ms 쓰로틀로 _checkAndUpdate 호출 (setState 유일 진입점)
-//   • build()에서 positionNotifier.value 직접 읽지 않음 (가사창 중복 방지)
+// _LyricsLineView  —  LP 모드(_LyricsAutoScroller)와 동일한 싱크 로직
+//                     디자인만 aesthetic 스타일로 변경
 // ──────────────────────────────────────────────────────────────────────────────
+// ── _LyricsLineView: LP 모드(_LyricsAutoScroller)와 완전히 동일한 싱크 로직
+// StatefulWidget wrapper — positionNotifier → currentPosition으로 변환해서 넘김
 class _LyricsLineView extends StatefulWidget {
   final List<LyricLine> lyrics;
   final ValueNotifier<Duration> positionNotifier;
@@ -1000,28 +997,92 @@ class _LyricsLineView extends StatefulWidget {
   State<_LyricsLineView> createState() => _LyricsLineViewState();
 }
 
-class _LyricsLineViewState extends State<_LyricsLineView>
+class _LyricsLineViewState extends State<_LyricsLineView> {
+  Duration _currentPosition = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPosition = widget.positionNotifier.value;
+    widget.positionNotifier.addListener(_onPositionChanged);
+  }
+
+  void _onPositionChanged() {
+    if (!mounted) return;
+    setState(() {
+      _currentPosition = widget.positionNotifier.value;
+    });
+  }
+
+  @override
+  void didUpdateWidget(_LyricsLineView old) {
+    super.didUpdateWidget(old);
+    if (old.positionNotifier != widget.positionNotifier) {
+      old.positionNotifier.removeListener(_onPositionChanged);
+      _currentPosition = widget.positionNotifier.value;
+      widget.positionNotifier.addListener(_onPositionChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.positionNotifier.removeListener(_onPositionChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _AestheticLyricsScroller(
+      key: ValueKey('${widget.lyrics.length}_${widget.lyrics.isNotEmpty ? widget.lyrics.first.text : ''}'),
+      lyrics: widget.lyrics,
+      currentPosition: _currentPosition,
+      height: widget.height,
+      accentColor: widget.accentColor,
+      isLyricsLoading: widget.isLyricsLoading,
+      isPlaying: widget.isPlaying,
+    );
+  }
+}
+
+// ── _AestheticLyricsScroller: LP의 _LyricsAutoScroller 로직 그대로,
+//    디자인만 aesthetic (prev/current/next 3줄 + 글로우 pulse)
+class _AestheticLyricsScroller extends StatefulWidget {
+  final List<LyricLine> lyrics;
+  final Duration currentPosition;
+  final double height;
+  final Color accentColor;
+  final bool isLyricsLoading;
+  final bool isPlaying;
+
+  const _AestheticLyricsScroller({
+    super.key,
+    required this.lyrics,
+    required this.currentPosition,
+    required this.height,
+    required this.accentColor,
+    this.isLyricsLoading = false,
+    required this.isPlaying,
+  });
+
+  @override
+  State<_AestheticLyricsScroller> createState() => _AestheticLyricsScrollerState();
+}
+
+class _AestheticLyricsScrollerState extends State<_AestheticLyricsScroller>
     with TickerProviderStateMixin {
-  int _currentIndex = -1;
-  String _displayText = '';
-  String _prevText = '';
-  String _nextText = '';
+  late Ticker _ticker;
 
-  // ── 인트로 구간 표시용 (build에서 positionNotifier 직접 읽기 제거)
-  bool _isIntro = false;
+  int _lastIndex = -1;
+  int _maxIndexReached = -1;
 
-  // ── 글로우 pulse 애니메이션
-  AnimationController? _glowController;
-
-  // ── LP 모드와 동일한 고정밀 동기화 변수
-  Ticker? _positionTicker;
+  // LP 모드와 완전히 동일한 동기화 변수
   Duration _basePosition = Duration.zero;
   Duration _elapsedSinceSync = Duration.zero;
-  Duration _prevNotifiedPos = Duration.zero;
   Duration _lastTickerCheck = Duration.zero;
   static const Duration _throttleInterval = Duration(milliseconds: 25);
-  static const Duration _seekThreshold = Duration(milliseconds: 300);
-  static const Duration _driftThreshold = Duration(milliseconds: 500);
+
+  // 글로우 pulse
+  late AnimationController _glowController;
 
   @override
   void initState() {
@@ -1032,177 +1093,117 @@ class _LyricsLineViewState extends State<_LyricsLineView>
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
-    _basePosition = widget.positionNotifier.value;
-    _prevNotifiedPos = _basePosition;
+    _basePosition = widget.currentPosition;
+    _lastIndex = _calculateCurrentIndex(_basePosition);
+    _maxIndexReached = _lastIndex;
 
-    widget.positionNotifier.addListener(_onPositionSync);
-
-    _positionTicker = createTicker((elapsed) {
-      if (!mounted) return;
+    _ticker = createTicker((elapsed) {
+      if (!mounted || !widget.isPlaying) return;
       if (elapsed - _lastTickerCheck < _throttleInterval) return;
       _lastTickerCheck = elapsed;
       _elapsedSinceSync = elapsed;
-
-      if (!widget.isPlaying) return;
-
-      // LP 모드와 동일: basePosition + ticker elapsed + 50ms 선행
-      final estimatedPos = _basePosition +
-          _elapsedSinceSync +
-          const Duration(milliseconds: 50);
-      _checkAndUpdate(estimatedPos);
+      _checkAndUpdate();
     });
 
-    if (widget.isPlaying) _positionTicker!.start();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAndUpdate(widget.positionNotifier.value);
-    });
+    if (widget.isPlaying) _ticker.start();
   }
 
-  /// positionNotifier 변경 시: 싱크 기준점 갱신 + drift/seek 감지
-  /// setState 없음 — Ticker가 다음 틱에서 반영
-  void _onPositionSync() {
-    if (!mounted) return;
-    final Duration current = widget.positionNotifier.value;
+  void _checkAndUpdate() {
+    final precisePos = _basePosition +
+        _elapsedSinceSync +
+        const Duration(milliseconds: 50);
+    final int newIndex = _calculateCurrentIndex(precisePos);
 
-    final bool isSeeked =
-        (current - _prevNotifiedPos).abs() > _seekThreshold ||
-        current < _prevNotifiedPos;
-
-    if (isSeeked) {
-      // seek: 즉시 동기화 + ticker 리셋
-      _basePosition = current;
-      _elapsedSinceSync = Duration.zero;
-      _lastTickerCheck = Duration.zero;
-      if (_positionTicker?.isTicking ?? false) {
-        _positionTicker!.stop();
-        _positionTicker!.start();
-      }
-    } else {
-      // 일반 업데이트: drift 감지
-      final estimatedNow = _basePosition + _elapsedSinceSync;
-      final drift = (current - estimatedNow).abs();
-      if (drift > _driftThreshold) {
-        _basePosition = current;
-        _elapsedSinceSync = Duration.zero;
-        _lastTickerCheck = Duration.zero;
-        if (_positionTicker?.isTicking ?? false) {
-          _positionTicker!.stop();
-          _positionTicker!.start();
-        }
-      }
+    if (newIndex != -1 && newIndex != _lastIndex) {
+      _lastIndex = newIndex;
+      if (newIndex > _maxIndexReached) _maxIndexReached = newIndex;
+      if (mounted) setState(() {});
     }
-
-    _prevNotifiedPos = current;
   }
 
-  /// Ticker에서만 호출 — 추정 위치로 가사 인덱스 계산 후 필요 시 setState
-  void _checkAndUpdate(Duration pos) {
-    final List<LyricLine> lines = widget.lyrics;
+  int _calculateCurrentIndex(Duration pos) {
+    if (widget.lyrics.isEmpty) return -1;
 
-    // 인트로 판단 (가사 없거나 첫 가사 전)
-    final bool isIntroNow = lines.isNotEmpty && pos < lines.first.time;
-
-    if (lines.isEmpty) {
-      if (_isIntro || _currentIndex != -1) {
-        if (mounted) setState(() { _isIntro = false; _currentIndex = -1; _displayText = ''; _prevText = ''; _nextText = ''; });
-      }
-      return;
-    }
-
-    int lo = 0, hi = lines.length - 1, idx = -1;
+    int lo = 0, hi = widget.lyrics.length - 1, index = -1;
     while (lo <= hi) {
-      final int mid = (lo + hi) >> 1;
-      if (lines[mid].time <= pos) {
-        idx = mid;
+      final mid = (lo + hi) >> 1;
+      if (widget.lyrics[mid].time <= pos) {
+        index = mid;
         lo = mid + 1;
       } else {
         hi = mid - 1;
       }
     }
 
-    if (idx == _currentIndex && isIntroNow == _isIntro) return;
-    if (!mounted) return;
-    setState(() {
-      _currentIndex = idx;
-      _isIntro = isIntroNow;
-      _displayText = idx >= 0 ? lines[idx].text : '';
-      _prevText    = idx > 0 ? lines[idx - 1].text : '';
-      _nextText    = (idx >= 0 && idx + 1 < lines.length)
-          ? lines[idx + 1].text
-          : '';
-    });
+    // 자연 재생 중에는 절대 이전 가사로 돌아가지 않음 (LP와 동일)
+    if (index < _maxIndexReached && _maxIndexReached != -1) {
+      return _maxIndexReached;
+    }
+    return index;
   }
 
   @override
-  void didUpdateWidget(_LyricsLineView old) {
+  void didUpdateWidget(_AestheticLyricsScroller old) {
     super.didUpdateWidget(old);
 
-    // positionNotifier 교체
-    if (old.positionNotifier != widget.positionNotifier) {
-      old.positionNotifier.removeListener(_onPositionSync);
-      _basePosition = widget.positionNotifier.value;
-      _prevNotifiedPos = _basePosition;
-      _elapsedSinceSync = Duration.zero;
-      widget.positionNotifier.addListener(_onPositionSync);
-    }
-
-    // isPlaying 변경 시 Ticker 제어 (LP 모드와 동일)
+    // 재생 상태 변경
     if (widget.isPlaying != old.isPlaying) {
       if (widget.isPlaying) {
-        _basePosition = widget.positionNotifier.value;
-        _prevNotifiedPos = _basePosition;
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
         _lastTickerCheck = Duration.zero;
-        if (!(_positionTicker?.isTicking ?? false)) {
-          _positionTicker?.start();
-        }
+        if (!_ticker.isTicking) _ticker.start();
       } else {
-        _positionTicker?.stop();
-        _basePosition = widget.positionNotifier.value;
-        _prevNotifiedPos = _basePosition;
+        _ticker.stop();
+        _basePosition = widget.currentPosition;
         _elapsedSinceSync = Duration.zero;
+      }
+    }
+
+    // 위치 변경 시 drift/seek 감지 (LP와 완전히 동일)
+    if (widget.currentPosition != old.currentPosition) {
+      final estimatedNow = _basePosition + _elapsedSinceSync;
+      final drift = (widget.currentPosition - estimatedNow).abs();
+      final bool isSeek =
+          (widget.currentPosition - old.currentPosition).abs().inMilliseconds > 300 ||
+          widget.currentPosition < old.currentPosition;
+
+      if (isSeek || drift > const Duration(milliseconds: 500)) {
+        _basePosition = widget.currentPosition;
+        _elapsedSinceSync = Duration.zero;
+        _lastTickerCheck = Duration.zero;
+
+        if (_ticker.isTicking) {
+          _ticker.stop();
+          _ticker.start();
+        }
+
+        final int newIndex = _calculateCurrentIndex(widget.currentPosition);
+        _lastIndex = newIndex;
+        _maxIndexReached = newIndex;
+        if (mounted) setState(() {});
       }
     }
 
     // 가사 목록 교체
-    final lyricsChanged = old.lyrics.length != widget.lyrics.length ||
-        (widget.lyrics.isNotEmpty &&
-            old.lyrics.isNotEmpty &&
-            old.lyrics.first.text != widget.lyrics.first.text) ||
-        widget.lyrics.isEmpty;
-    if (lyricsChanged) {
-      _currentIndex = -1;
-      _isIntro = false;
-      _displayText = '';
-      _prevText = '';
-      _nextText = '';
-      _basePosition = widget.positionNotifier.value;
-      _prevNotifiedPos = _basePosition;
+    if (widget.lyrics != old.lyrics) {
+      _basePosition = widget.currentPosition;
       _elapsedSinceSync = Duration.zero;
-      _lastTickerCheck = Duration.zero;
-      if (_positionTicker?.isTicking ?? false) {
-        _positionTicker!.stop();
-        _positionTicker!.start();
-      }
+      _lastIndex = -1;
+      _maxIndexReached = -1;
     }
   }
 
   @override
   void dispose() {
-    widget.positionNotifier.removeListener(_onPositionSync);
-    _positionTicker?.dispose();
-    _glowController?.dispose();
-    _glowController = null;
+    _ticker.dispose();
+    _glowController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool hasLyrics = widget.lyrics.isNotEmpty;
-    final AnimationController? ctrl = _glowController;
-
-    // 로딩 중이면 스피너 표시
+    // 로딩
     if (widget.isLyricsLoading) {
       return SizedBox(
         height: widget.height,
@@ -1219,179 +1220,70 @@ class _LyricsLineViewState extends State<_LyricsLineView>
       );
     }
 
-    // ── build()에서 positionNotifier.value 직접 읽지 않음
-    // 모든 상태는 Ticker → _checkAndUpdate → setState 경로로만 갱신됨
-    final String currentText;
-    final bool isActive;
-    if (!hasLyrics) {
-      currentText = '';
-      isActive = false;
-    } else if (_isIntro) {
-      // 인트로 구간: 첫 가사를 dim하게 미리 표시 (_isIntro는 Ticker가 관리)
-      currentText = widget.lyrics.first.text;
-      isActive = false;
-    } else if (_displayText.isNotEmpty) {
-      currentText = _displayText;
-      isActive = true;
-    } else {
-      currentText = '';
-      isActive = false;
-    }
+    final bool hasLyrics = widget.lyrics.isNotEmpty;
+    final int idx = _lastIndex;
+
+    // 인트로 구간 판단 — positionNotifier.value 직접 읽지 않고
+    // didUpdateWidget으로 받은 currentPosition 사용
+    final bool isIntro = hasLyrics && widget.currentPosition < widget.lyrics.first.time;
+
+    final String currentText = idx >= 0
+        ? widget.lyrics[idx].text
+        : (isIntro ? widget.lyrics.first.text : '');
+    final bool isActive = idx >= 0 && !isIntro;
 
     return SizedBox(
       height: widget.height,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // ── 이전 가사 (dim)
-          if (hasLyrics && _prevText.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                _prevText,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.2,
-                  height: 1.3,
-                ),
-              ),
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.06),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+              child: child,
             ),
-
-          // ── 현재 가사 (메인, 글로우 pulse)
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 380),
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.08),
-                  end: Offset.zero,
-                ).animate(
-                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-                child: child,
-              ),
-            ),
-            child: ctrl != null
-                ? AnimatedBuilder(
-                    key: ValueKey(currentText),
-                    animation: ctrl,
-                    builder: (_, __) {
-                      final double g =
-                          isActive ? 0.40 + ctrl.value * 0.30 : 0.0;
-                      return _LyricText(
-                        text: currentText,
-                        isActive: isActive,
-                        glowAlpha: g,
-                        accentColor: widget.accentColor,
-                      );
-                    },
-                  )
-                : _LyricText(
-                    key: ValueKey(currentText),
-                    text: currentText,
-                    isActive: isActive,
-                    glowAlpha: isActive ? 0.55 : 0.0,
-                    accentColor: widget.accentColor,
-                  ),
           ),
-
-          // ── 다음 가사 예고 (dim)
-          if (hasLyrics && _nextText.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                _nextText,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 0.2,
-                  height: 1.3,
-                ),
-              ),
-            ),
-
-          // ── 장식 라인
-          if (hasLyrics && isActive && ctrl != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: AnimatedBuilder(
-                animation: ctrl,
-                builder: (_, __) => Container(
-                  width: 28 + ctrl.value * 12,
-                  height: 1.0,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        widget.accentColor
-                            .withValues(alpha: 0.30 + ctrl.value * 0.25),
-                        Colors.transparent,
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(1),
+          child: AnimatedBuilder(
+            key: ValueKey(currentText),
+            animation: _glowController,
+            builder: (_, __) {
+              final double g = isActive ? 0.45 + _glowController.value * 0.30 : 0.0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: Text(
+                  currentText,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isActive
+                        ? Colors.white.withValues(alpha: 0.95)
+                        : Colors.white.withValues(alpha: 0.22),
+                    fontSize: isActive ? 26 : 18,
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w300,
+                    letterSpacing: isActive ? -0.5 : 0.2,
+                    height: 1.3,
+                    shadows: g > 0
+                        ? [
+                            Shadow(
+                              color: widget.accentColor.withValues(alpha: g),
+                              blurRadius: 28,
+                            ),
+                            Shadow(
+                              color: widget.accentColor.withValues(alpha: g * 0.5),
+                              blurRadius: 56,
+                            ),
+                          ]
+                        : null,
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── 가사 텍스트 위젯 — 글로우 파라미터 분리
-class _LyricText extends StatelessWidget {
-  final String text;
-  final bool isActive;
-  final double glowAlpha;
-  final Color accentColor;
-
-  const _LyricText({
-    super.key,
-    required this.text,
-    required this.isActive,
-    required this.glowAlpha,
-    required this.accentColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: isActive
-              ? Colors.white.withValues(alpha: 0.94)
-              : Colors.white.withValues(alpha: 0.20),
-          fontSize: isActive ? 19 : 15,
-          fontWeight: isActive ? FontWeight.w700 : FontWeight.w300,
-          letterSpacing: isActive ? -0.4 : 0.2,
-          height: 1.35,
-          shadows: glowAlpha > 0
-              ? [
-                  Shadow(
-                    color: accentColor.withValues(alpha: glowAlpha),
-                    blurRadius: 22,
-                  ),
-                  Shadow(
-                    color: accentColor.withValues(alpha: glowAlpha * 0.5),
-                    blurRadius: 48,
-                  ),
-                ]
-              : null,
+              );
+            },
+          ),
         ),
       ),
     );
