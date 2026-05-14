@@ -26,6 +26,9 @@ class ClassicVinylView extends StatelessWidget {
 
   final LyricStatus lyricStatus;
 
+  // 🔵 LP 글로우 링용 accent 색상
+  final Color accentColor;
+
   const ClassicVinylView({
     super.key,
     required this.isMinimalMode,
@@ -42,6 +45,7 @@ class ClassicVinylView extends StatelessWidget {
     required this.lyrics,
     required this.currentPosition,
     required this.lyricStatus,
+    this.accentColor = const Color(0xFF735DA5),
   });
 
   @override
@@ -93,15 +97,45 @@ class ClassicVinylView extends StatelessWidget {
         onToggleMode();
       },
       child: RepaintBoundary(
-        child: RotationTransition(
-          turns: lpController,
-          child: VinylDisk(
-            controller: lpController,
-            size: size,
-            albumArtBytes: albumArtBytes,
-            title: title,
-            artist: artist,
-          ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // 🔵 재생 중 글로우 링
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeInOut,
+              width: size + (isPlaying ? 22.0 : 0.0),
+              height: size + (isPlaying ? 22.0 : 0.0),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: isPlaying
+                    ? [
+                        BoxShadow(
+                          color: accentColor.withValues(alpha: 0.38),
+                          blurRadius: 36,
+                          spreadRadius: 6,
+                        ),
+                        BoxShadow(
+                          color: accentColor.withValues(alpha: 0.15),
+                          blurRadius: 70,
+                          spreadRadius: 12,
+                        ),
+                      ]
+                    : [],
+              ),
+            ),
+            // 💿 LP 디스크
+            RotationTransition(
+              turns: lpController,
+              child: VinylDisk(
+                controller: lpController,
+                size: size,
+                albumArtBytes: albumArtBytes,
+                title: title,
+                artist: artist,
+              ),
+            ),
+          ],
         ),
       ),
     );

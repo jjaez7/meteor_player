@@ -1151,6 +1151,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               artist: _currentArtist,
                               lpController: _lpController,
                               isPlaying: _isPlaying,
+                              accentColor: _playBtnColor,
                               onToggleMode: () => setState(
                                 () => _isMinimalMode = !_isMinimalMode,
                               ),
@@ -1779,6 +1780,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                                 artist: _currentArtist,
                                 lpController: _lpController,
                                 isPlaying: _isPlaying,
+                                accentColor: _playBtnColor,
                                 onToggleMode: () => setState(
                                   () => _isMinimalMode = !_isMinimalMode,
                                 ),
@@ -1973,6 +1975,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── 제목 + 아티스트 + 앨범명 블록
                   SizedBox(
                     width: iW,
                     child: AnimatedSwitcher(
@@ -2020,8 +2023,46 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                     ),
                   ),
 
-                  SizedBox(height: gap2),
+                  // 앨범명 (있을 때만)
+                  if (_currentAlbumName != null && _currentAlbumName!.isNotEmpty) ...[
+                    SizedBox(height: gap1 * 0.7),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.album_rounded,
+                          size: artistFs * 0.85,
+                          color: _artistColor.withValues(alpha: 0.45),
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            _currentAlbumName!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: artistFs * 0.85,
+                              color: _artistColor.withValues(alpha: 0.45),
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
 
+                  SizedBox(height: gap2 * 0.6),
+
+                  // ── 얇은 구분선
+                  Container(
+                    height: 0.5,
+                    width: iW,
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+
+                  SizedBox(height: gap2 * 0.6),
+
+                  // ── 프로그레스바
                   SizedBox(
                     key: _progressKey,
                     width: iW,
@@ -2059,7 +2100,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                       _buildScaledMainBtn(
                         isPlaying: _isPlaying,
                         size: mainBtnSz,
-                        activeColor: _barColor,
+                        activeColor: _playBtnColor,
                         onTap: () {
                           PlayerLogic.togglePlay(
                             isPlaying: _isPlaying,
@@ -2106,21 +2147,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: size,
         height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.10),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.15),
-            width: 1.5,
+        child: Center(
+          child: Icon(
+            icon,
+            size: size * 0.62,
+            color: Colors.white.withValues(alpha: 0.75),
           ),
-        ),
-        child: Icon(
-          icon,
-          size: size * 0.52,
-          color: Colors.white.withValues(alpha: 0.9),
         ),
       ),
     );
@@ -2136,36 +2171,26 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
         width: size,
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isPlaying
-              ? Colors.white.withValues(alpha: 0.25)
-              : Colors.white.withValues(alpha: 0.15),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.30),
-            width: 2,
-          ),
+          color: activeColor,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.20),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: activeColor.withValues(alpha: isPlaying ? 0.50 : 0.25),
+              blurRadius: isPlaying ? 28 : 14,
+              spreadRadius: isPlaying ? 3 : 0,
+              offset: const Offset(0, 4),
             ),
-            if (isPlaying)
-              BoxShadow(
-                color: activeColor.withValues(alpha: 0.30),
-                blurRadius: 25,
-                spreadRadius: 2,
-              ),
           ],
         ),
         child: Center(
           child: Icon(
             isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            size: size * 0.52,
-            color: isPlaying ? activeColor : Colors.white,
+            size: size * 0.50,
+            color: Colors.white,
           ),
         ),
       ),
@@ -2826,6 +2851,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         artist: _currentArtist,
                         lpController: _lpController,
                         isPlaying: _isPlaying,
+                        accentColor: _playBtnColor,
                         onToggleMode: () =>
                             setState(() => _isMinimalMode = !_isMinimalMode),
                         onShowLyrics: () {

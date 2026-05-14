@@ -64,6 +64,10 @@ class PlayerAppBar extends StatelessWidget {
     if (isPip || isFlipCover) return const SizedBox.shrink();
 
     final glassColor = bgColor.withValues(alpha: 0.85);
+    // 포인트 컬러 기반 유리 메뉴 색
+    final accentMenuBg = Color.lerp(Colors.black, playBtnColor, 0.06)!
+        .withValues(alpha: 0.92);
+    final accentBorder = playBtnColor.withValues(alpha: 0.35);
 
     final EdgeInsets sysPad = MediaQuery.of(context).padding;
     final double extraLeft  = sysPad.left;
@@ -81,15 +85,18 @@ class PlayerAppBar extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: PopupMenuButton<String>(
-              color: glassColor,
-              elevation: 8,
+              color: accentMenuBg,
+              elevation: 12,
               offset: const Offset(0, 50),
-              constraints: const BoxConstraints(minWidth: 160),
+              constraints: const BoxConstraints(minWidth: 190),
               shape: RoundedRectangleBorder(
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
-                borderRadius: BorderRadius.circular(22),
+                side: BorderSide(color: accentBorder, width: 0.8),
+                borderRadius: BorderRadius.circular(20),
               ),
-              icon: Icon(Icons.expand_more_rounded, size: 32, color: textColor),
+              child: _AestheticMenuIcon(
+                textColor: textColor,
+                icon: Icons.expand_more_rounded,
+              ),
               onSelected: (val) => LeftMenuActions.handleLeftMenuClick(
                 context: context,
                 value: val,
@@ -159,15 +166,19 @@ class PlayerAppBar extends StatelessWidget {
                   ),
 
                 PopupMenuButton<String>(
-                  color: glassColor,
-                  elevation: 10,
+                  color: accentMenuBg,
+                  elevation: 12,
                   offset: const Offset(0, 50),
-                  constraints: const BoxConstraints(minWidth: 200),
+                  constraints: const BoxConstraints(minWidth: 210),
                   shape: RoundedRectangleBorder(
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
-                    borderRadius: BorderRadius.circular(22),
+                    side: BorderSide(color: accentBorder, width: 0.8),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  icon: Icon(Icons.more_vert_rounded, color: textColor, size: 28),
+                  child: _AestheticMenuIcon(
+                    textColor: textColor,
+                    icon: Icons.more_vert_rounded,
+                    isSmall: true,
+                  ),
                   onSelected: (val) => handleMenuClick(
                     context: context,
                     value: val,
@@ -210,32 +221,83 @@ class PlayerAppBar extends StatelessWidget {
   PopupMenuItem<String> _menuItem(String title, IconData icon, String value, {bool isHighlight = false}) {
     return PopupMenuItem<String>(
       value: value,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: isHighlight
-                  ? Colors.amber.withValues(alpha: 0.2)
-                  : textColor.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
+                  ? Colors.amber.withValues(alpha: 0.15)
+                  : playBtnColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isHighlight
+                    ? Colors.amber.withValues(alpha: 0.35)
+                    : playBtnColor.withValues(alpha: 0.20),
+                width: 0.6,
+              ),
             ),
             child: Icon(
               icon,
-              color: isHighlight ? Colors.amber : textColor.withValues(alpha: 0.8),
-              size: 18
+              color: isHighlight
+                  ? Colors.amber.withValues(alpha: 0.90)
+                  : playBtnColor.withValues(alpha: 0.65),
+              size: 16,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Text(
             title,
             style: TextStyle(
-              color: isHighlight ? Colors.amber : textColor,
-              fontWeight: isHighlight ? FontWeight.w800 : FontWeight.w600,
-              fontSize: 13,
-            )
+              color: isHighlight
+                  ? Colors.amber.withValues(alpha: 0.95)
+                  : playBtnColor.withValues(alpha: 0.85),
+              fontWeight: isHighlight ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 12,
+              letterSpacing: isHighlight ? 0.6 : 0.3,
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// _AestheticMenuIcon  —  AppBar 메뉴 버튼 (aesthetic 스타일)
+// ──────────────────────────────────────────────────────────────────────────────
+class _AestheticMenuIcon extends StatelessWidget {
+  final Color textColor;
+  final IconData icon;
+  final bool isSmall;
+
+  const _AestheticMenuIcon({
+    required this.textColor,
+    required this.icon,
+    this.isSmall = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: isSmall ? 34 : 38,
+      height: isSmall ? 34 : 38,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(isSmall ? 11 : 13),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.09),
+          width: 0.7,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          icon,
+          size: isSmall ? 18 : 22,
+          color: textColor.withValues(alpha: 0.70),
+        ),
       ),
     );
   }
