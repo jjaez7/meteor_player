@@ -34,6 +34,7 @@ import 'services/share_service.dart';
 import 'menu/release_notes.dart';
 import 'menu/review_prompt.dart';
 import 'widgets/essential_view.dart'; // 🎧 에센셜 모드
+import 'package:permission_handler/permission_handler.dart';
 
 Timer? _accessCheckTimer;
 bool _isPassDialogShowing = false;
@@ -336,9 +337,33 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   // ──────────────────────────────────────────────────────────────────────
   // 🎧 에센셜 모드 토글
   // ──────────────────────────────────────────────────────────────────────
-  void _handleEssentialModeToggle() {
+  // 🎧 에센셜 모드 토글
+  // ──────────────────────────────────────────────────────────────────────
+  void _handleEssentialModeToggle() async {
     HapticFeedback.lightImpact();
-    setState(() => _isEssentialMode = !_isEssentialMode);
+
+    if (!_isEssentialMode) {
+      // 이미 권한 있으면 바로 진입
+      final status = await Permission.microphone.status;
+      if (!status.isGranted) {
+        // 권한 없으면 설명 다이얼로그 먼저
+        if (!mounted) return;
+        final shouldRequest = await showDialog<bool>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: 0.75),
+          builder: (ctx) => _VisualizerPermissionDialog(
+            accentColor: _playBtnColor,
+          ),
+        ) ?? false;
+
+        if (shouldRequest) {
+          await Permission.microphone.request();
+        }
+        // 허락 여부 무관하게 진입 — 거부 시 시뮬레이션 폴백
+      }
+    }
+
+    if (mounted) setState(() => _isEssentialMode = !_isEssentialMode);
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -3402,4 +3427,186 @@ class _GlassTrackPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GlassTrackPainter old) =>
       old.value != value || old.dragging != dragging;
+}
+// ──────────────────────────────────────────────────────────────────────────────
+// _VisualizerPermissionDialog  —  Essential 모드 진입 시 권한 설명 다이얼로그
+// ──────────────────────────────────────────────────────────────────────────────
+class _VisualizerPermissionDialog extends StatelessWidget {
+  final Color accentColor;
+  const _VisualizerPermissionDialog({required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.12),
+                width: 0.8,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 아이콘
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accentColor.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.30),
+                      width: 0.8,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withValues(alpha: 0.20),
+                        blurRadius: 24,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.equalizer_rounded,
+                    color: accentColor,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 제목
+                const Text(
+                  'VISUALIZER ACCESS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3.0,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 설명
+                Text(
+                  'To visualize the audio spectrum,\nGLASNYL needs access to your audio output.\n\nNo recording or storage occurs —\nonly the frequency of your music is read.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 13,
+                    height: 1.7,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // 작은 보조 안내
+                Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 11,
+                        color: Colors.white.withValues(alpha: 0.30),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Runs on simulation if denied',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.30),
+                          fontSize: 10,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 허용 버튼
+                _DialogButton(
+                  label: 'ALLOW',
+                  color: accentColor,
+                  onTap: () => Navigator.pop(context, true),
+                ),
+                const SizedBox(height: 10),
+
+                // 거부 버튼
+                _DialogButton(
+                  label: 'USE SIMULATION',
+                  color: Colors.transparent,
+                  borderColor: Colors.white.withValues(alpha: 0.15),
+                  textColor: Colors.white.withValues(alpha: 0.40),
+                  onTap: () => Navigator.pop(context, false),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final Color? borderColor;
+  final Color? textColor;
+  final VoidCallback onTap;
+
+  const _DialogButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.borderColor,
+    this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 52,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: color == Colors.transparent ? 0 : 0.18),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: borderColor ?? color.withValues(alpha: 0.45),
+            width: 0.8,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor ?? Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2.0,
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -1,5 +1,6 @@
 package com.glasnyl.app
 
+import android.media.audiofx.Visualizer
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
@@ -51,6 +52,10 @@ class MainActivity: AudioServiceActivity() {
     private val EVENT_CHANNEL = "com.glasnyl.app/media_status"
     private val PIP_CHANNEL = "com.glasnyl.app/pip_status"
     private val VOLUME_CHANNEL = "com.glasnyl.app/volume_events"
+    private val FFT_CHANNEL = "com.glasnyl.app/fft_data"
+
+    private var visualizer: Visualizer? = null
+    private var fftEventSink: EventChannel.EventSink? = null
     // 🚀 앨범아트를 폴링 데이터에서 분리 — SmartClip IPC 버퍼 오버플로우 방지
     private var cachedAlbumArt: ByteArray = ByteArray(0)
     private var cachedAlbumArtTitle: String = ""
@@ -248,6 +253,20 @@ class MainActivity: AudioServiceActivity() {
                 }
             }
         )
+
+        // FFT Visualizer 채널 — 전체 오디오 출력 믹스 시각화
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, FFT_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    fftEventSink = events
+                    startVisualizer()
+                }
+                override fun onCancel(arguments: Any?) {
+                    fftEventSink = null
+                    stopVisualizer()
+                }
+            }
+        )
     }
 
     // 🚀 [추가] PIP 버튼 생성
@@ -288,8 +307,77 @@ class MainActivity: AudioServiceActivity() {
     }
 
     // 🚀 [추가] 앱 생명주기에 따른 리시버 등록/해제
+    // ── FFT Visualizer 시작
+    private fun startVisualizer() {
+        try {
+            stopVisualizer()
+            val v = Visualizer(0) // 0 = 전체 출력 믹스 (외부 앱 포함)
+            // captureSize 1024 → FFT 빈 512개 확보, 고주파 해상도 대폭 향상
+            v.captureSize = Visualizer.getCaptureSizeRange()[1].coerceAtMost(1024)
+            val NUM_BANDS = 32
+            v.setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
+                override fun onFftDataCapture(vis: Visualizer, fft: ByteArray, samplingRate: Int) {
+                    if (fftEventSink == null) return
+                    // fft[0] = DC, fft[1] = Nyquist → 2부터 실제 스펙트럼
+                    // 각 빈은 실수/허수 쌍 → magnitude = sqrt(re²+im²)
+                    // fft.size = captureSize, 유효 빈 수 = captureSize/2 - 1
+                    val numBins = fft.size / 2  // 실질적 주파수 빈 수
+                    val bands = FloatArray(NUM_BANDS)
+
+                    // 로그 스케일 경계: 인간 청각에 맞게 저음에 빈 몰아주기
+                    // 20Hz~20kHz 를 NUM_BANDS 구간으로 로그 분할
+                    val freqPerBin = samplingRate.toFloat() / fft.size
+                    val minFreq = 20f
+                    val maxFreq = (samplingRate / 2).toFloat()
+
+                    for (band in 0 until NUM_BANDS) {
+                        // 각 밴드의 주파수 경계 (로그 스케일)
+                        val fLow  = minFreq * Math.pow((maxFreq / minFreq).toDouble(), band.toDouble() / NUM_BANDS).toFloat()
+                        val fHigh = minFreq * Math.pow((maxFreq / minFreq).toDouble(), (band + 1).toDouble() / NUM_BANDS).toFloat()
+
+                        val binLow  = (fLow  / freqPerBin).toInt().coerceIn(1, numBins - 1)
+                        val binHigh = (fHigh / freqPerBin).toInt().coerceIn(binLow + 1, numBins)
+
+                        var sumSq = 0.0
+                        var count = 0
+                        for (bin in binLow until binHigh) {
+                            val re = fft[bin * 2].toInt().toDouble()
+                            val im = if (bin * 2 + 1 < fft.size) fft[bin * 2 + 1].toInt().toDouble() else 0.0
+                            sumSq += re * re + im * im
+                            count++
+                        }
+                        val rms = if (count > 0) Math.sqrt(sumSq / count) / 128.0 else 0.0
+
+                        // 고주파 대역 적극 boost: band 0=1.0x, band 31=6.0x
+                        val t = band.toDouble() / (NUM_BANDS - 1)
+                        val boost = 1.0 + t * t * 5.0  // 제곱 커브로 고주파일수록 급격히 증폭
+                        bands[band] = (rms * boost).toFloat().coerceIn(0f, 1f)
+                    }
+                    handler.post { fftEventSink?.success(bands.toList()) }
+                }
+                override fun onWaveFormDataCapture(vis: Visualizer, waveform: ByteArray, samplingRate: Int) {}
+            },
+            20000, // 초당 20회 캡처 (20000 mHz)
+            false, true) // waveform=false, fft=true
+            v.enabled = true
+            visualizer = v
+        } catch (e: Exception) {
+            // Visualizer 권한 없거나 기기 미지원 시 조용히 실패
+            visualizer = null
+        }
+    }
+
+    private fun stopVisualizer() {
+        try {
+            visualizer?.enabled = false
+            visualizer?.release()
+        } catch (e: Exception) {}
+        visualizer = null
+    }
+
     override fun onStart() {
         super.onStart()
+        if (fftEventSink != null) startVisualizer()
         val filter = IntentFilter().apply {
             addAction("PREV")
             addAction("TOGGLE")
@@ -304,6 +392,7 @@ class MainActivity: AudioServiceActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopVisualizer()
         try { unregisterReceiver(pipReceiver) } catch (e: Exception) {}
         volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
     }

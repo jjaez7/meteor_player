@@ -31,17 +31,26 @@ class ReleaseNoteItem {
 // ★ 여기에 버전 올릴 때마다 맨 위에 추가하세요
 const List<ReleaseNote> kReleaseNotes = [
   ReleaseNote(
+    version: "1.0.1",
+    date: "2026-05-15",
+    items: [
+      ReleaseNoteItem(NoteType.improvement, "AESTHETIC Mode Released"),
+      ReleaseNoteItem(NoteType.feature, "Using FFT Data to move equalizer (You have to check record audio permission)"),
+    ],
+    
+  ),
+  ReleaseNote(
     version: "0.0.4",
     date: "2026-04-08",
     items: [
-      ReleaseNoteItem(NoteType.feature, "Bug fixed"),
+      ReleaseNoteItem(NoteType.fix, "Bug fixed"),
     ],
   ),
   ReleaseNote(
     version: "0.0.3",
     date: "2026-04-08",
     items: [
-      ReleaseNoteItem(NoteType.feature, "Bug fixed"),
+      ReleaseNoteItem(NoteType.fix, "Bug fixed"),
     ],
   ),
   ReleaseNote(
