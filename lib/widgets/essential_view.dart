@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../models/lyric_model.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EssentialView  —  GLASNYL AESTHETIC 모드  (v2)
@@ -17,20 +17,15 @@ import 'package:flutter/services.dart';
 //   • 주파수 힌트 텍스트 — 하단 SUB / MID / HI 레이블
 //   • 스펙트럼 미러 모드 — 위아래 반전 대칭으로 더 꽉 찬 느낌
 //
-// [player_screen.dart 적용 — 변경 없음]
-//   EssentialView(
-//     albumArtBytes: _albumArtBytes,
-//     title: _currentTitle,
-//     artist: _currentArtist,
-//     albumName: _currentAlbumName,
-//     isPlaying: _isPlaying,
-//     accentColor: _playBtnColor,
-//     textColor: _textColor,
-//   ),
+// 변경점 (v3) — 가사 넘김 수정
+//   • _LyricsLineView: positionNotifier listener 단독 방식 → Ticker 보완 추가
+//   • LP 모드(_LandscapeLyricsScroller)와 동일하게 basePosition + 경과시간 추정
+//   • positionNotifier는 싱크 기준점 갱신 용도로만 사용
+//
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── 내부 뷰 모드
-enum _SpectrumMode { auto, freq }
+enum _SpectrumMode { auto, freq, lyrics }
 
 class EssentialView extends StatefulWidget {
   final Uint8List? albumArtBytes;
@@ -40,6 +35,9 @@ class EssentialView extends StatefulWidget {
   final bool isPlaying;
   final Color accentColor;
   final Color textColor;
+  final List<LyricLine> lyrics;
+  final ValueNotifier<Duration> positionNotifier;
+  final bool isLyricsLoading; // 가사 로딩 중 여부
 
   const EssentialView({
     super.key,
@@ -50,6 +48,9 @@ class EssentialView extends StatefulWidget {
     required this.isPlaying,
     required this.accentColor,
     required this.textColor,
+    this.lyrics = const [],
+    required this.positionNotifier,
+    this.isLyricsLoading = false,
   });
 
   @override
@@ -79,6 +80,11 @@ class _EssentialViewState extends State<EssentialView>
   static const int _bandCount = 64;
   static const int _nativeBands = 32;
   final List<double> _bands = List.filled(_bandCount, 0.0);
+
+  // ── FREQ 모드 개별 밴드 독립 상태
+  final List<double> _bandPhase = List.filled(_bandCount, 0.0);
+  final List<double> _bandSpeed = List.filled(_bandCount, 0.0);
+  final List<double> _bandDecay = List.filled(_bandCount, 0.0);
 
   // ── 시뮬 내부 상태
   final _rand = math.Random();
@@ -115,6 +121,13 @@ class _EssentialViewState extends State<EssentialView>
       return 0.8 + t * 1.6 + _rand.nextDouble() * 0.6;
     });
 
+    // FREQ 모드 독립 밴드 초기화
+    for (int i = 0; i < _bandCount; i++) {
+      _bandPhase[i] = _rand.nextDouble() * math.pi * 2;
+      _bandSpeed[i] = 1.5 + _rand.nextDouble() * 4.0;
+      _bandDecay[i] = 0.55 + _rand.nextDouble() * 0.30;
+    }
+
     // 입장 애니메이션
     _enterController = AnimationController(
       vsync: this,
@@ -146,8 +159,6 @@ class _EssentialViewState extends State<EssentialView>
         (data) {
           if (!mounted) return;
           if (data is List && data.isNotEmpty) {
-            // AUTO 모드에서는 시뮬을 건드리지 않음
-            // FREQ 모드일 때만 시뮬 중단 및 타임아웃 타이머 갱신
             if (_specMode == _SpectrumMode.freq) {
               if (_useSimulation) {
                 _simTicker?.stop();
@@ -163,26 +174,40 @@ class _EssentialViewState extends State<EssentialView>
                     ? (data[i] as num).toDouble().clamp(0.0, 1.0)
                     : 0.0,
               );
+
+              final now = DateTime.now();
+              final dt = now.difference(_lastTick).inMicroseconds / 1e6;
+              _lastTick = now;
+
               for (int i = 0; i < _bandCount; i++) {
-                // 선형 매핑: _nativeBands(32) → _bandCount(64) 균등 분배
-                final double pos = i / (_bandCount - 1) * (_nativeBands - 1);
-                final int lo = pos.floor().clamp(0, _nativeBands - 1);
-                final int hi = (lo + 1).clamp(0, _nativeBands - 1);
-                final double t = pos - lo;
-                double v = incoming[lo] * (1 - t) + incoming[hi] * t;
+                final int srcIdx =
+                    (i * _nativeBands / _bandCount).round().clamp(0, _nativeBands - 1);
+                double rawV = incoming[srcIdx];
 
-                // 노이즈 플로어: 고주파일수록 최소 움직임 보장
-                // i=0 → 0.0, i=63 → 0.08 (눈에 띄는 최소 진동)
                 final double bandT = i / (_bandCount - 1);
-                final double noiseFloor = bandT * 0.08 * (0.5 + _rand.nextDouble());
-                v = (v + noiseFloor).clamp(0.0, 1.0);
+                final double exponent = 2.2 - bandT * 1.0;
+                rawV = math.pow(rawV, exponent).toDouble().clamp(0.0, 1.0);
 
-                // 감쇠: 전 대역 균일 (빠른 반응)
-                const double decay = 0.70;
+                final double gain = 0.60 + bandT * 0.28;
+                rawV = (rawV * gain).clamp(0.0, 0.78);
+
+                _bandPhase[i] += _bandSpeed[i] * dt;
+                final double indep = 0.5 + 0.5 * math.sin(_bandPhase[i]);
+                final double blend = (1.0 - rawV / 0.78).clamp(0.0, 1.0);
+                double v = rawV + indep * blend * 0.10;
+
+                if (bandT > 0.5) {
+                  v += (bandT - 0.5) * 0.06 * _rand.nextDouble();
+                }
+
+                v = v.clamp(0.0, 0.82);
+
                 if (v > _bands[i]) {
                   _bands[i] = v;
                 } else {
-                  _bands[i] = (_bands[i] * decay + v * (1.0 - decay)).clamp(0.0, 1.0);
+                  _bands[i] = (_bands[i] * _bandDecay[i] +
+                               v * (1.0 - _bandDecay[i]))
+                      .clamp(0.0, 0.82);
                 }
               }
               _repaintTick.value++;
@@ -274,21 +299,20 @@ class _EssentialViewState extends State<EssentialView>
 
   // ── 비트 링 + 파티클 업데이트
   void _updateBeatsAndParticles(double dt) {
-    // AUTO 모드에서는 파티클/링 비활성화
-    if (!widget.isPlaying || _specMode == _SpectrumMode.auto) {
+    if (!widget.isPlaying ||
+        _specMode == _SpectrumMode.auto ||
+        _specMode == _SpectrumMode.lyrics) {
       _beatRings.clear();
       _particles.clear();
       return;
     }
 
-    // 비트 링 발생 (beatPulse 급등 감지)
     if (_beatPulse > 0.65 && _lastBeatPulse <= 0.40) {
       _beatRings.add(_BeatRing(
         radius: 0.0,
         alpha: 0.55 + _rand.nextDouble() * 0.25,
         speed: 80.0 + _rand.nextDouble() * 40.0,
       ));
-      // 파티클 방출
       final int count = 6 + _rand.nextInt(8);
       for (int i = 0; i < count; i++) {
         final angle = _rand.nextDouble() * math.pi * 2;
@@ -306,18 +330,16 @@ class _EssentialViewState extends State<EssentialView>
     }
     _lastBeatPulse = _beatPulse;
 
-    // 비트 링 업데이트
     for (final ring in _beatRings) {
       ring.radius += ring.speed * dt;
       ring.alpha -= dt * 1.2;
     }
     _beatRings.removeWhere((r) => r.alpha <= 0.0);
 
-    // 파티클 업데이트
     for (final p in _particles) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vy += 30 * dt; // 약한 중력
+      p.vy += 30 * dt;
       p.life -= dt * 1.0;
       p.alpha = (p.life * 0.9).clamp(0.0, 1.0);
     }
@@ -326,27 +348,42 @@ class _EssentialViewState extends State<EssentialView>
 
   void _onToggleMode() {
     HapticFeedback.selectionClick();
-    // 먼저 다음 상태를 변수에 저장 (setState는 비동기이므로 블록 밖에서 읽으면 이전 값)
-    final nextMode = _specMode == _SpectrumMode.auto
-        ? _SpectrumMode.freq
-        : _SpectrumMode.auto;
+    final nextMode = switch (_specMode) {
+      _SpectrumMode.auto   => _SpectrumMode.freq,
+      _SpectrumMode.freq   => _SpectrumMode.lyrics,
+      _SpectrumMode.lyrics => _SpectrumMode.auto,
+    };
 
     setState(() {
       _specMode = nextMode;
     });
 
-    if (nextMode == _SpectrumMode.auto) {
-      // AUTO로 전환 → 시뮬 시작 (FFT 스트림은 계속 수신하되 무시됨)
+    if (nextMode == _SpectrumMode.auto || nextMode == _SpectrumMode.lyrics) {
       if (!_useSimulation) _startSimulation();
     } else {
-      // FREQ로 전환 → 시뮬 중단, FFT 데이터 대기
       _simTicker?.stop();
       _useSimulation = false;
-      // 데이터가 안 오면 시뮬 폴백 타이머 재시작
       _fftTimeoutTimer?.cancel();
       _fftTimeoutTimer = Timer(const Duration(milliseconds: 600), () {
         if (mounted && !_useSimulation) _startSimulation();
       });
+    }
+  }
+
+  @override
+  void didUpdateWidget(EssentialView old) {
+    super.didUpdateWidget(old);
+    if (old.title != widget.title) {
+      for (int i = 0; i < _bandCount; i++) {
+        _bands[i] = 0.0;
+        _envelope[i] = 0.0;
+        _target[i] = 0.0;
+      }
+      _beatPulse = 0.0;
+      _beatEnergy = 0.0;
+      _beatRings.clear();
+      _particles.clear();
+      _repaintTick.value++;
     }
   }
 
@@ -377,18 +414,14 @@ class _EssentialViewState extends State<EssentialView>
     final double specLeft = (screenW - specW) / 2;
 
     final double specH = isLandscape
-        ? (screenH * 0.34).clamp(70.0, 200.0)
-        : (screenH * 0.22).clamp(80.0, 200.0);
+        ? (screenH * 0.34).clamp(90.0, 220.0)
+        : (screenH * 0.25).clamp(110.0, 220.0);
 
     final double specTop = labelTop + 68.0 + 14.0;
 
-    // 비트 링 중심 = 스펙트럼 세로 중앙
     final double ringCx = screenW / 2;
     final double ringCy = specTop + specH / 2;
 
-    // ❌ Positioned.fill 제거 — 부모가 Stack 직계가 아니면 ParentDataWidget 에러 발생
-    // player_screen.dart에서 AnimatedOpacity > IgnorePointer 안에 들어가므로
-    // SizedBox.expand + Stack으로 대체
     return SizedBox.expand(
       child: FadeTransition(
         opacity: _enterFade,
@@ -401,7 +434,7 @@ class _EssentialViewState extends State<EssentialView>
                 child: RepaintBoundary(
                   child: ValueListenableBuilder<int>(
                     valueListenable: _repaintTick,
-                    builder: (_, __, ___) => CustomPaint(
+                    builder: (_, _, _) => CustomPaint(
                       painter: _BeatEffectPainter(
                         rings: List.of(_beatRings),
                         particles: List.of(_particles),
@@ -424,36 +457,64 @@ class _EssentialViewState extends State<EssentialView>
                 ),
               ),
 
-              // ── FFT 스펙트럼
+              // ── FFT 스펙트럼 (LYRICS 모드에서는 숨김)
               Positioned(
                 top: specTop,
                 left: specLeft,
                 width: specW,
                 height: specH,
-                child: RepaintBoundary(
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _repaintTick,
-                    builder: (_, __, ___) => CustomPaint(
-                      painter: _SpectrumPainter(
-                        // 리스트 복사로 shouldRepaint 정상 동작
-                        bands: List<double>.from(_bands),
-                        accentColor: widget.accentColor,
-                        isPlaying: widget.isPlaying,
+                child: AnimatedOpacity(
+                  opacity: _specMode == _SpectrumMode.lyrics ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: RepaintBoundary(
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _repaintTick,
+                      builder: (_, _, _) => CustomPaint(
+                        painter: _SpectrumPainter(
+                          bands: List<double>.from(_bands),
+                          accentColor: widget.accentColor,
+                          isPlaying: widget.isPlaying,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
 
-              // ── 주파수 힌트 레이블 (SUB / MID / HI)
+              // ── 가사 한 줄 오버레이 (LYRICS 모드)
+              Positioned(
+                top: specTop,
+                left: specLeft - 16,
+                width: specW + 32,
+                height: specH,
+                child: AnimatedOpacity(
+                  opacity: _specMode == _SpectrumMode.lyrics ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: _LyricsLineView(
+                    key: ValueKey('${widget.title}_${widget.lyrics.length}'),
+                    lyrics: widget.lyrics,
+                    positionNotifier: widget.positionNotifier,
+                    accentColor: widget.accentColor,
+                    height: specH,
+                    isLyricsLoading: widget.isLyricsLoading,
+                    isPlaying: widget.isPlaying,
+                  ),
+                ),
+              ),
+
+              // ── 주파수 힌트 레이블 (SUB / MID / HI) — LYRICS 모드에서 숨김
               Positioned(
                 top: specTop + specH + 8,
                 left: specLeft,
                 width: specW,
-                child: _FreqLabels(accentColor: widget.accentColor),
+                child: AnimatedOpacity(
+                  opacity: _specMode == _SpectrumMode.lyrics ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: _FreqLabels(accentColor: widget.accentColor),
+                ),
               ),
 
-              // ── 내부 모드 토글 (AUTO ↔ FREQ) — 스펙트럼 위 우측
+              // ── 내부 모드 토글 (AUTO ↔ FREQ ↔ LYRICS) — 스펙트럼 위 우측
               Positioned(
                 top: specTop - 28,
                 right: specLeft,
@@ -486,7 +547,7 @@ class _EssentialViewState extends State<EssentialView>
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// _InternalModeToggle  —  AUTO ↔ FREQ 토글 (잘 안 보이는 pill 스타일)
+// _InternalModeToggle  —  AUTO ↔ FREQ ↔ LYRICS 3-way 토글
 // ──────────────────────────────────────────────────────────────────────────────
 class _InternalModeToggle extends StatelessWidget {
   final _SpectrumMode mode;
@@ -501,7 +562,6 @@ class _InternalModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isFreq = mode == _SpectrumMode.freq;
     return GestureDetector(
       onTap: onToggle,
       behavior: HitTestBehavior.opaque,
@@ -510,12 +570,12 @@ class _InternalModeToggle extends StatelessWidget {
         curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isFreq
+          color: mode != _SpectrumMode.auto
               ? accentColor.withValues(alpha: 0.10)
               : Colors.white.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isFreq
+            color: mode != _SpectrumMode.auto
                 ? accentColor.withValues(alpha: 0.25)
                 : Colors.white.withValues(alpha: 0.08),
             width: 0.6,
@@ -524,42 +584,65 @@ class _InternalModeToggle extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // AUTO 레이블
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-                color: !isFreq
-                    ? Colors.white.withValues(alpha: 0.55)
-                    : Colors.white.withValues(alpha: 0.18),
-              ),
-              child: const Text('AUTO'),
+            _ToggleLabel(
+              text: 'AUTO',
+              active: mode == _SpectrumMode.auto,
+              accentColor: accentColor,
             ),
-            // 구분선
-            Container(
-              width: 0.5,
-              height: 10,
-              margin: const EdgeInsets.symmetric(horizontal: 5),
-              color: Colors.white.withValues(alpha: 0.12),
+            _ToggleDivider(),
+            _ToggleLabel(
+              text: 'FREQ',
+              active: mode == _SpectrumMode.freq,
+              accentColor: accentColor,
             ),
-            // FREQ 레이블
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-                color: isFreq
-                    ? accentColor.withValues(alpha: 0.85)
-                    : Colors.white.withValues(alpha: 0.18),
-              ),
-              child: const Text('FREQ'),
+            _ToggleDivider(),
+            _ToggleLabel(
+              text: 'LRC',
+              active: mode == _SpectrumMode.lyrics,
+              accentColor: accentColor,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ToggleLabel extends StatelessWidget {
+  final String text;
+  final bool active;
+  final Color accentColor;
+  const _ToggleLabel({
+    required this.text,
+    required this.active,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedDefaultTextStyle(
+      duration: const Duration(milliseconds: 200),
+      style: TextStyle(
+        fontSize: 8,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.0,
+        color: active
+            ? accentColor.withValues(alpha: 0.90)
+            : Colors.white.withValues(alpha: 0.18),
+      ),
+      child: Text(text),
+    );
+  }
+}
+
+class _ToggleDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 0.5,
+      height: 10,
+      margin: const EdgeInsets.symmetric(horizontal: 5),
+      color: Colors.white.withValues(alpha: 0.12),
     );
   }
 }
@@ -641,7 +724,6 @@ class _BeatEffectPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 비트 링
     for (final ring in rings) {
       final paint = Paint()
         ..color = accentColor.withValues(alpha: ring.alpha.clamp(0.0, 1.0))
@@ -651,7 +733,6 @@ class _BeatEffectPainter extends CustomPainter {
       canvas.drawCircle(Offset(cx, cy), ring.radius, paint);
     }
 
-    // 파티클
     for (final p in particles) {
       final paint = Paint()
         ..color = accentColor.withValues(alpha: p.alpha.clamp(0.0, 1.0))
@@ -889,8 +970,435 @@ class EssentialToggleButton extends StatelessWidget {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// _SpectrumPainter  —  FFT 버그 수정 + 미러 강화
+// _LyricsLineView  —  현재 재생 위치 기준 가사 한 줄 표시
+//
+// LP 모드(_LyricsAutoScroller)와 동일한 방식:
+//   • _basePosition + _elapsedSinceSync 로 정밀 위치 추정
+//   • positionNotifier listener: 싱크 기준점 갱신 + drift/seek 감지만 담당
+//   • Ticker: 25ms 쓰로틀로 _checkAndUpdate 호출 (setState 유일 진입점)
+//   • build()에서 positionNotifier.value 직접 읽지 않음 (가사창 중복 방지)
 // ──────────────────────────────────────────────────────────────────────────────
+class _LyricsLineView extends StatefulWidget {
+  final List<LyricLine> lyrics;
+  final ValueNotifier<Duration> positionNotifier;
+  final Color accentColor;
+  final double height;
+  final bool isLyricsLoading;
+  final bool isPlaying;
+
+  const _LyricsLineView({
+    super.key,
+    required this.lyrics,
+    required this.positionNotifier,
+    required this.accentColor,
+    required this.height,
+    this.isLyricsLoading = false,
+    required this.isPlaying,
+  });
+
+  @override
+  State<_LyricsLineView> createState() => _LyricsLineViewState();
+}
+
+class _LyricsLineViewState extends State<_LyricsLineView>
+    with TickerProviderStateMixin {
+  int _currentIndex = -1;
+  String _displayText = '';
+  String _prevText = '';
+  String _nextText = '';
+
+  // ── 인트로 구간 표시용 (build에서 positionNotifier 직접 읽기 제거)
+  bool _isIntro = false;
+
+  // ── 글로우 pulse 애니메이션
+  AnimationController? _glowController;
+
+  // ── LP 모드와 동일한 고정밀 동기화 변수
+  Ticker? _positionTicker;
+  Duration _basePosition = Duration.zero;
+  Duration _elapsedSinceSync = Duration.zero;
+  Duration _prevNotifiedPos = Duration.zero;
+  Duration _lastTickerCheck = Duration.zero;
+  static const Duration _throttleInterval = Duration(milliseconds: 25);
+  static const Duration _seekThreshold = Duration(milliseconds: 300);
+  static const Duration _driftThreshold = Duration(milliseconds: 500);
+
+  @override
+  void initState() {
+    super.initState();
+
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+
+    _basePosition = widget.positionNotifier.value;
+    _prevNotifiedPos = _basePosition;
+
+    widget.positionNotifier.addListener(_onPositionSync);
+
+    _positionTicker = createTicker((elapsed) {
+      if (!mounted) return;
+      if (elapsed - _lastTickerCheck < _throttleInterval) return;
+      _lastTickerCheck = elapsed;
+      _elapsedSinceSync = elapsed;
+
+      if (!widget.isPlaying) return;
+
+      // LP 모드와 동일: basePosition + ticker elapsed + 50ms 선행
+      final estimatedPos = _basePosition +
+          _elapsedSinceSync +
+          const Duration(milliseconds: 50);
+      _checkAndUpdate(estimatedPos);
+    });
+
+    if (widget.isPlaying) _positionTicker!.start();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAndUpdate(widget.positionNotifier.value);
+    });
+  }
+
+  /// positionNotifier 변경 시: 싱크 기준점 갱신 + drift/seek 감지
+  /// setState 없음 — Ticker가 다음 틱에서 반영
+  void _onPositionSync() {
+    if (!mounted) return;
+    final Duration current = widget.positionNotifier.value;
+
+    final bool isSeeked =
+        (current - _prevNotifiedPos).abs() > _seekThreshold ||
+        current < _prevNotifiedPos;
+
+    if (isSeeked) {
+      // seek: 즉시 동기화 + ticker 리셋
+      _basePosition = current;
+      _elapsedSinceSync = Duration.zero;
+      _lastTickerCheck = Duration.zero;
+      if (_positionTicker?.isTicking ?? false) {
+        _positionTicker!.stop();
+        _positionTicker!.start();
+      }
+    } else {
+      // 일반 업데이트: drift 감지
+      final estimatedNow = _basePosition + _elapsedSinceSync;
+      final drift = (current - estimatedNow).abs();
+      if (drift > _driftThreshold) {
+        _basePosition = current;
+        _elapsedSinceSync = Duration.zero;
+        _lastTickerCheck = Duration.zero;
+        if (_positionTicker?.isTicking ?? false) {
+          _positionTicker!.stop();
+          _positionTicker!.start();
+        }
+      }
+    }
+
+    _prevNotifiedPos = current;
+  }
+
+  /// Ticker에서만 호출 — 추정 위치로 가사 인덱스 계산 후 필요 시 setState
+  void _checkAndUpdate(Duration pos) {
+    final List<LyricLine> lines = widget.lyrics;
+
+    // 인트로 판단 (가사 없거나 첫 가사 전)
+    final bool isIntroNow = lines.isNotEmpty && pos < lines.first.time;
+
+    if (lines.isEmpty) {
+      if (_isIntro || _currentIndex != -1) {
+        if (mounted) setState(() { _isIntro = false; _currentIndex = -1; _displayText = ''; _prevText = ''; _nextText = ''; });
+      }
+      return;
+    }
+
+    int lo = 0, hi = lines.length - 1, idx = -1;
+    while (lo <= hi) {
+      final int mid = (lo + hi) >> 1;
+      if (lines[mid].time <= pos) {
+        idx = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    if (idx == _currentIndex && isIntroNow == _isIntro) return;
+    if (!mounted) return;
+    setState(() {
+      _currentIndex = idx;
+      _isIntro = isIntroNow;
+      _displayText = idx >= 0 ? lines[idx].text : '';
+      _prevText    = idx > 0 ? lines[idx - 1].text : '';
+      _nextText    = (idx >= 0 && idx + 1 < lines.length)
+          ? lines[idx + 1].text
+          : '';
+    });
+  }
+
+  @override
+  void didUpdateWidget(_LyricsLineView old) {
+    super.didUpdateWidget(old);
+
+    // positionNotifier 교체
+    if (old.positionNotifier != widget.positionNotifier) {
+      old.positionNotifier.removeListener(_onPositionSync);
+      _basePosition = widget.positionNotifier.value;
+      _prevNotifiedPos = _basePosition;
+      _elapsedSinceSync = Duration.zero;
+      widget.positionNotifier.addListener(_onPositionSync);
+    }
+
+    // isPlaying 변경 시 Ticker 제어 (LP 모드와 동일)
+    if (widget.isPlaying != old.isPlaying) {
+      if (widget.isPlaying) {
+        _basePosition = widget.positionNotifier.value;
+        _prevNotifiedPos = _basePosition;
+        _elapsedSinceSync = Duration.zero;
+        _lastTickerCheck = Duration.zero;
+        if (!(_positionTicker?.isTicking ?? false)) {
+          _positionTicker?.start();
+        }
+      } else {
+        _positionTicker?.stop();
+        _basePosition = widget.positionNotifier.value;
+        _prevNotifiedPos = _basePosition;
+        _elapsedSinceSync = Duration.zero;
+      }
+    }
+
+    // 가사 목록 교체
+    final lyricsChanged = old.lyrics.length != widget.lyrics.length ||
+        (widget.lyrics.isNotEmpty &&
+            old.lyrics.isNotEmpty &&
+            old.lyrics.first.text != widget.lyrics.first.text) ||
+        widget.lyrics.isEmpty;
+    if (lyricsChanged) {
+      _currentIndex = -1;
+      _isIntro = false;
+      _displayText = '';
+      _prevText = '';
+      _nextText = '';
+      _basePosition = widget.positionNotifier.value;
+      _prevNotifiedPos = _basePosition;
+      _elapsedSinceSync = Duration.zero;
+      _lastTickerCheck = Duration.zero;
+      if (_positionTicker?.isTicking ?? false) {
+        _positionTicker!.stop();
+        _positionTicker!.start();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.positionNotifier.removeListener(_onPositionSync);
+    _positionTicker?.dispose();
+    _glowController?.dispose();
+    _glowController = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasLyrics = widget.lyrics.isNotEmpty;
+    final AnimationController? ctrl = _glowController;
+
+    // 로딩 중이면 스피너 표시
+    if (widget.isLyricsLoading) {
+      return SizedBox(
+        height: widget.height,
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: widget.accentColor.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── build()에서 positionNotifier.value 직접 읽지 않음
+    // 모든 상태는 Ticker → _checkAndUpdate → setState 경로로만 갱신됨
+    final String currentText;
+    final bool isActive;
+    if (!hasLyrics) {
+      currentText = '';
+      isActive = false;
+    } else if (_isIntro) {
+      // 인트로 구간: 첫 가사를 dim하게 미리 표시 (_isIntro는 Ticker가 관리)
+      currentText = widget.lyrics.first.text;
+      isActive = false;
+    } else if (_displayText.isNotEmpty) {
+      currentText = _displayText;
+      isActive = true;
+    } else {
+      currentText = '';
+      isActive = false;
+    }
+
+    return SizedBox(
+      height: widget.height,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // ── 이전 가사 (dim)
+          if (hasLyrics && _prevText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _prevText,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.2,
+                  height: 1.3,
+                ),
+              ),
+            ),
+
+          // ── 현재 가사 (메인, 글로우 pulse)
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 380),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.08),
+                  end: Offset.zero,
+                ).animate(
+                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                child: child,
+              ),
+            ),
+            child: ctrl != null
+                ? AnimatedBuilder(
+                    key: ValueKey(currentText),
+                    animation: ctrl,
+                    builder: (_, __) {
+                      final double g =
+                          isActive ? 0.40 + ctrl.value * 0.30 : 0.0;
+                      return _LyricText(
+                        text: currentText,
+                        isActive: isActive,
+                        glowAlpha: g,
+                        accentColor: widget.accentColor,
+                      );
+                    },
+                  )
+                : _LyricText(
+                    key: ValueKey(currentText),
+                    text: currentText,
+                    isActive: isActive,
+                    glowAlpha: isActive ? 0.55 : 0.0,
+                    accentColor: widget.accentColor,
+                  ),
+          ),
+
+          // ── 다음 가사 예고 (dim)
+          if (hasLyrics && _nextText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                _nextText,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 0.2,
+                  height: 1.3,
+                ),
+              ),
+            ),
+
+          // ── 장식 라인
+          if (hasLyrics && isActive && ctrl != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: AnimatedBuilder(
+                animation: ctrl,
+                builder: (_, __) => Container(
+                  width: 28 + ctrl.value * 12,
+                  height: 1.0,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        widget.accentColor
+                            .withValues(alpha: 0.30 + ctrl.value * 0.25),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 가사 텍스트 위젯 — 글로우 파라미터 분리
+class _LyricText extends StatelessWidget {
+  final String text;
+  final bool isActive;
+  final double glowAlpha;
+  final Color accentColor;
+
+  const _LyricText({
+    super.key,
+    required this.text,
+    required this.isActive,
+    required this.glowAlpha,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: isActive
+              ? Colors.white.withValues(alpha: 0.94)
+              : Colors.white.withValues(alpha: 0.20),
+          fontSize: isActive ? 19 : 15,
+          fontWeight: isActive ? FontWeight.w700 : FontWeight.w300,
+          letterSpacing: isActive ? -0.4 : 0.2,
+          height: 1.35,
+          shadows: glowAlpha > 0
+              ? [
+                  Shadow(
+                    color: accentColor.withValues(alpha: glowAlpha),
+                    blurRadius: 22,
+                  ),
+                  Shadow(
+                    color: accentColor.withValues(alpha: glowAlpha * 0.5),
+                    blurRadius: 48,
+                  ),
+                ]
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+
 class _SpectrumPainter extends CustomPainter {
   final List<double> bands;
   final Color accentColor;
@@ -1019,7 +1527,6 @@ class _SpectrumPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SpectrumPainter old) {
-    // ✅ 버그 수정: 리스트 참조가 아닌 내용 비교
     if (old.accentColor != accentColor || old.isPlaying != isPlaying) {
       return true;
     }
