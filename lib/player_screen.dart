@@ -1195,39 +1195,49 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             : 0.0;
 
                         return RepaintBoundary(
-                          child: VinylTurntableView(
-                            lpController: _lpController,
-                            size: turntableSize,
-                            albumArtBytes: _albumArtBytes,
-                            title: _currentTitle,
-                            artist: _currentArtist,
-                            isPlaying: _isPlaying,
-                            progress: progress,
-                            progressStream: _turntableProgressCtrl.stream,
-                            accentColor: _playBtnColor,
-                            bgColor: _bgColor,
-                            onPlayPause: _handleInternalToggle,
-                            onNext: () {
-                              HapticFeedback.lightImpact();
-                              PlayerLogic.skipNext();
-                            },
-                            onPrevious: () {
-                              HapticFeedback.lightImpact();
-                              PlayerLogic.skipPrevious();
-                            },
-                            onSeek: (ratio) {
-                              final dur =
-                                  _totalDuration ??
-                                  audioHandler.mediaItem.value?.duration;
-                              if (dur != null && dur.inMilliseconds > 0) {
-                                final target = Duration(
-                                  milliseconds: (dur.inMilliseconds * ratio)
-                                      .round(),
-                                );
-                                _handleSeek(target);
-                                PlayerLogic.seekTo(ratio);
-                              }
-                            },
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 500),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            transitionBuilder: (child, anim) => FadeTransition(
+                              opacity: anim,
+                              child: child,
+                            ),
+                            child: VinylTurntableView(
+                              key: ValueKey('landscape_${_currentTitle}_${_albumArtBytes?.length}'),
+                              lpController: _lpController,
+                              size: turntableSize,
+                              albumArtBytes: _albumArtBytes,
+                              title: _currentTitle,
+                              artist: _currentArtist,
+                              isPlaying: _isPlaying,
+                              progress: progress,
+                              progressStream: _turntableProgressCtrl.stream,
+                              accentColor: _playBtnColor,
+                              bgColor: _bgColor,
+                              onPlayPause: _handleInternalToggle,
+                              onNext: () {
+                                HapticFeedback.lightImpact();
+                                PlayerLogic.skipNext();
+                              },
+                              onPrevious: () {
+                                HapticFeedback.lightImpact();
+                                PlayerLogic.skipPrevious();
+                              },
+                              onSeek: (ratio) {
+                                final dur =
+                                    _totalDuration ??
+                                    audioHandler.mediaItem.value?.duration;
+                                if (dur != null && dur.inMilliseconds > 0) {
+                                  final target = Duration(
+                                    milliseconds: (dur.inMilliseconds * ratio)
+                                        .round(),
+                                  );
+                                  _handleSeek(target);
+                                  PlayerLogic.seekTo(ratio);
+                                }
+                              },
+                            ),
                           ),
                         );
                       },
@@ -1813,39 +1823,49 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               : 0.0;
 
                           return RepaintBoundary(
-                            child: VinylTurntableView(
-                              lpController: _lpController,
-                              size: turntableSize,
-                              albumArtBytes: _albumArtBytes,
-                              title: _currentTitle,
-                              artist: _currentArtist,
-                              isPlaying: _isPlaying,
-                              progress: progress,
-                              progressStream: _turntableProgressCtrl.stream,
-                              accentColor: _playBtnColor,
-                              bgColor: _bgColor,
-                              onPlayPause: _handleInternalToggle,
-                              onNext: () {
-                                HapticFeedback.lightImpact();
-                                PlayerLogic.skipNext();
-                              },
-                              onPrevious: () {
-                                HapticFeedback.lightImpact();
-                                PlayerLogic.skipPrevious();
-                              },
-                              onSeek: (ratio) {
-                                final dur =
-                                    _totalDuration ??
-                                    audioHandler.mediaItem.value?.duration;
-                                if (dur != null && dur.inMilliseconds > 0) {
-                                  final target = Duration(
-                                    milliseconds: (dur.inMilliseconds * ratio)
-                                        .round(),
-                                  );
-                                  _handleSeek(target);
-                                  PlayerLogic.seekTo(ratio);
-                                }
-                              },
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 500),
+                              switchInCurve: Curves.easeOut,
+                              switchOutCurve: Curves.easeIn,
+                              transitionBuilder: (child, anim) => FadeTransition(
+                                opacity: anim,
+                                child: child,
+                              ),
+                              child: VinylTurntableView(
+                                key: ValueKey('${_currentTitle}_${_albumArtBytes?.length}'),
+                                lpController: _lpController,
+                                size: turntableSize,
+                                albumArtBytes: _albumArtBytes,
+                                title: _currentTitle,
+                                artist: _currentArtist,
+                                isPlaying: _isPlaying,
+                                progress: progress,
+                                progressStream: _turntableProgressCtrl.stream,
+                                accentColor: _playBtnColor,
+                                bgColor: _bgColor,
+                                onPlayPause: _handleInternalToggle,
+                                onNext: () {
+                                  HapticFeedback.lightImpact();
+                                  PlayerLogic.skipNext();
+                                },
+                                onPrevious: () {
+                                  HapticFeedback.lightImpact();
+                                  PlayerLogic.skipPrevious();
+                                },
+                                onSeek: (ratio) {
+                                  final dur =
+                                      _totalDuration ??
+                                      audioHandler.mediaItem.value?.duration;
+                                  if (dur != null && dur.inMilliseconds > 0) {
+                                    final target = Duration(
+                                      milliseconds: (dur.inMilliseconds * ratio)
+                                          .round(),
+                                    );
+                                    _handleSeek(target);
+                                    PlayerLogic.seekTo(ratio);
+                                  }
+                                },
+                              ),
                             ),
                           );
                         },
@@ -1955,21 +1975,49 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 children: [
                   SizedBox(
                     width: iW,
-                    child: MarqueeTitleWidget(
-                      key: Key(_currentTitle),
-                      title: _currentTitle,
-                      fontSize: titleFs,
-                      textColor: _textColor,
-                      width: iW,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 380),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 0.08),
+                            end: Offset.zero,
+                          ).animate(CurvedAnimation(
+                            parent: anim,
+                            curve: Curves.easeOutCubic,
+                          )),
+                          child: child,
+                        ),
+                      ),
+                      child: MarqueeTitleWidget(
+                        key: Key(_currentTitle),
+                        title: _currentTitle,
+                        fontSize: titleFs,
+                        textColor: _textColor,
+                        width: iW,
+                      ),
                     ),
                   ),
 
                   SizedBox(height: gap1),
 
-                  ArtistTextWidget(
-                    artist: _currentArtist,
-                    fontSize: artistFs,
-                    color: _artistColor.withValues(alpha: 0.85),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: child,
+                    ),
+                    child: ArtistTextWidget(
+                      key: Key(_currentArtist),
+                      artist: _currentArtist,
+                      fontSize: artistFs,
+                      color: _artistColor.withValues(alpha: 0.85),
+                    ),
                   ),
 
                   SizedBox(height: gap2),

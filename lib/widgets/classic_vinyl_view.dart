@@ -47,28 +47,37 @@ class ClassicVinylView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
 
-    // Stack + Offstage: _LyricsAutoScroller를 항상 살아있게 유지
-    // AnimatedSwitcher는 isLyricsMode 전환 시 dispose/mount 반복 → 싱크 리셋 문제 발생
+    // AnimatedOpacity + IgnorePointer: 전환 시 크로스페이드, 가사 스크롤러는 항상 alive
     return Stack(
       alignment: Alignment.center,
       children: [
-        // ── 가사 카드 (항상 alive, isLyricsMode 아닐 때 숨김)
-        Offstage(
-          offstage: !isLyricsMode,
-          child: _buildLyricsCard(),
-        ),
-        // ── vinyl / minimal (isLyricsMode일 때 숨김)
-        Offstage(
-          offstage: isLyricsMode,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            switchInCurve: Curves.easeOutBack,
-            switchOutCurve: Curves.easeIn,
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(scale: animation, child: child),
+        // ── vinyl / minimal
+        IgnorePointer(
+          ignoring: isLyricsMode,
+          child: AnimatedOpacity(
+            opacity: isLyricsMode ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeInOut,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeOutBack,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(scale: animation, child: child),
+              ),
+              child: isMinimalMode ? _buildMinimalArt() : _buildVinylDisk(),
             ),
-            child: isMinimalMode ? _buildMinimalArt() : _buildVinylDisk(),
+          ),
+        ),
+        // ── 가사 카드 (항상 alive)
+        IgnorePointer(
+          ignoring: !isLyricsMode,
+          child: AnimatedOpacity(
+            opacity: isLyricsMode ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeInOut,
+            child: _buildLyricsCard(),
           ),
         ),
       ],
@@ -234,11 +243,19 @@ class _LyricItemState extends State<_LyricItem>
             padding: const EdgeInsets.symmetric(horizontal: 30),
             child: DefaultTextStyle(
               style: TextStyle(
-                color: Colors.white.withValues(alpha: lerpDouble(0.25, 1.0, t)!),
+                color: Colors.white.withValues(alpha: lerpDouble(0.20, 1.0, t)!),
                 fontSize: lerpDouble(widget.baseSize, widget.currentSize, t)!,
                 fontWeight: t > 0.5 ? FontWeight.bold : FontWeight.normal,
                 height: 1.3,
                 letterSpacing: -0.5,
+                shadows: t > 0.5
+                    ? [
+                        Shadow(
+                          color: Colors.white.withValues(alpha: 0.25 * t),
+                          blurRadius: 18,
+                        ),
+                      ]
+                    : null,
               ),
               child: child!,
             ),
@@ -605,8 +622,7 @@ Widget build(BuildContext context) {
               ),
             ),
 
-            // 🚀 레이어 2: 가사 리스트 (RepaintBoundary로 격리)
-            // 가사가 스크롤될 때 "가사 레이어"만 다시 그리도록 제한합니다.
+            // 🚀 레이어 2: 가사 리스트
             Positioned.fill(
               child: RepaintBoundary(
                 child: widget.lyrics.isEmpty
@@ -622,9 +638,6 @@ Widget build(BuildContext context) {
                         child: ListView.builder(
                           controller: _scrollController,
                           physics: const BouncingScrollPhysics(),
-                          // 상하 padding = size/2 - itemExtent/2
-                          // → 첫/마지막 아이템도 정중앙에 올 수 있음
-                          // → offset = index * itemExtent 이 정확히 중앙
                           padding: EdgeInsets.symmetric(
                             vertical: widget.size / 2 - _itemExtent / 2,
                           ),
@@ -641,7 +654,30 @@ Widget build(BuildContext context) {
               ),
             ),
 
-            // 레이어 3: 하단 출처 표기 (텍스트 위젯)
+            // 레이어 3: 상하 페이드 마스크 (가사 가장자리 자연스럽게)
+            if (widget.lyrics.isNotEmpty)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(responsiveRadius),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.55),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.55),
+                        ],
+                        stops: const [0.0, 0.22, 0.78, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // 레이어 4: 하단 출처 표기
             if (widget.lyrics.isNotEmpty) _buildSourceTag(),
           ],
         ),
