@@ -427,6 +427,42 @@ class _EssentialViewState extends State<EssentialView>
           position: _enterSlide,
           child: Stack(
             children: [
+              // ── 앨범아트 블러 배경
+              if (widget.albumArtBytes != null)
+                Positioned.fill(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 800),
+                    child: SizedBox.expand(
+                      key: ValueKey(widget.albumArtBytes.hashCode),
+                      child: ImageFiltered(
+                        imageFilter: ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                        child: Image.memory(
+                          widget.albumArtBytes!,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              // ── 위에 어두운 오버레이 (가독성 확보)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.55),
+                        Colors.black.withValues(alpha: 0.35),
+                        Colors.black.withValues(alpha: 0.70),
+                      ],
+                      stops: const [0.0, 0.5, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+
               // ── 비트 링 + 파티클 레이어
               Positioned.fill(
                 child: RepaintBoundary(
@@ -451,7 +487,10 @@ class _EssentialViewState extends State<EssentialView>
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: _EssentialLabel(textColor: widget.textColor),
+                  child: _EssentialLabel(
+                    textColor: widget.textColor,
+                    accentColor: widget.accentColor,
+                  ),
                 ),
               ),
 
@@ -762,48 +801,112 @@ class _BeatEffectPainter extends CustomPainter {
 // ──────────────────────────────────────────────────────────────────────────────
 // _EssentialLabel
 // ──────────────────────────────────────────────────────────────────────────────
-class _EssentialLabel extends StatelessWidget {
+class _EssentialLabel extends StatefulWidget {
   final Color textColor;
-  const _EssentialLabel({required this.textColor});
+  final Color accentColor;
+  const _EssentialLabel({required this.textColor, required this.accentColor});
+
+  @override
+  State<_EssentialLabel> createState() => _EssentialLabelState();
+}
+
+class _EssentialLabelState extends State<_EssentialLabel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _glow = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _glow.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 36,
-          height: 0.8,
-          color: Colors.white.withValues(alpha: 0.22),
-          margin: const EdgeInsets.only(bottom: 10),
-        ),
-        Text(
-          'AESTHETIC',
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 10.0,
-            color: Colors.white.withValues(alpha: 0.82),
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.40),
-                blurRadius: 20,
-                offset: const Offset(0, 3),
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (_, __) {
+        final double g = 0.18 + _glow.value * 0.28;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 상단 가는 라인 — accent 컬러로
+            Container(
+              width: 48,
+              height: 0.8,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    widget.accentColor.withValues(alpha: 0.70),
+                    Colors.transparent,
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'GLASNYL',
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 5.5,
-            color: Colors.white.withValues(alpha: 0.28),
-          ),
-        ),
-      ],
+            ),
+            Text(
+              'AESTHETIC',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 10.0,
+                color: Colors.white.withValues(alpha: 0.92),
+                shadows: [
+                  Shadow(
+                    color: widget.accentColor.withValues(alpha: g),
+                    blurRadius: 28,
+                  ),
+                  Shadow(
+                    color: widget.accentColor.withValues(alpha: g * 0.55),
+                    blurRadius: 56,
+                  ),
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.40),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 16,
+                  height: 0.5,
+                  color: widget.accentColor.withValues(alpha: 0.35),
+                  margin: const EdgeInsets.only(right: 6),
+                ),
+                Text(
+                  'GLASNYL',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 5.5,
+                    color: widget.accentColor.withValues(alpha: 0.45),
+                  ),
+                ),
+                Container(
+                  width: 16,
+                  height: 0.5,
+                  color: widget.accentColor.withValues(alpha: 0.35),
+                  margin: const EdgeInsets.only(left: 6),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -811,7 +914,7 @@ class _EssentialLabel extends StatelessWidget {
 // ──────────────────────────────────────────────────────────────────────────────
 // _EssentialFooter
 // ──────────────────────────────────────────────────────────────────────────────
-class _EssentialFooter extends StatelessWidget {
+class _EssentialFooter extends StatefulWidget {
   final String title;
   final String artist;
   final String? albumName;
@@ -827,90 +930,171 @@ class _EssentialFooter extends StatelessWidget {
   });
 
   @override
+  State<_EssentialFooter> createState() => _EssentialFooterState();
+}
+
+class _EssentialFooterState extends State<_EssentialFooter>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _playAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _playAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    if (widget.isPlaying) _playAnim.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_EssentialFooter old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlaying != old.isPlaying) {
+      if (widget.isPlaying) {
+        _playAnim.repeat(reverse: true);
+      } else {
+        _playAnim.stop();
+        _playAnim.value = 0.0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _playAnim.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 400),
-          width: isPlaying ? 6 : 4,
-          height: isPlaying ? 6 : 4,
-          margin: const EdgeInsets.only(right: 12),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isPlaying
-                ? accentColor.withValues(alpha: 0.9)
-                : Colors.white.withValues(alpha: 0.25),
-            boxShadow: isPlaying
-                ? [
-                    BoxShadow(
-                      color: accentColor.withValues(alpha: 0.55),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ]
-                : null,
+            color: Colors.white.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 0.8,
+            ),
           ),
-        ),
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              // 재생 인디케이터 — 3개 바 애니메이션
+              AnimatedBuilder(
+                animation: _playAnim,
+                builder: (_, __) {
+                  return SizedBox(
+                    width: 14,
+                    height: 20,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: List.generate(3, (i) {
+                        final double phase = (i / 2.0);
+                        final double v = widget.isPlaying
+                            ? (0.35 + 0.65 * ((math.sin(
+                                    (_playAnim.value + phase) * math.pi) +
+                                1) /
+                                2))
+                            : 0.20;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 80),
+                          width: 3,
+                          height: (20 * v).clamp(3.0, 20.0),
+                          decoration: BoxDecoration(
+                            color: widget.isPlaying
+                                ? widget.accentColor.withValues(alpha: 0.85)
+                                : Colors.white.withValues(alpha: 0.22),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        );
+                      }),
+                    ),
+                  );
+                },
               ),
-              const SizedBox(height: 3),
-              Text(
-                artist,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.42),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.8,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 14),
+              // 구분선
+              Container(
+                width: 0.6,
+                height: 32,
+                color: Colors.white.withValues(alpha: 0.12),
+                margin: const EdgeInsets.only(right: 14),
               ),
-              if (albumName != null && albumName!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(
+              // 곡 정보
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.album_rounded,
-                      size: 9,
-                      color: Colors.white.withValues(alpha: 0.28),
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        albumName!,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.28),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 0.6,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                        height: 1.2,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.artist,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.50),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.albumName != null &&
+                            widget.albumName!.isNotEmpty) ...[
+                          Container(
+                            width: 3,
+                            height: 3,
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withValues(alpha: 0.22),
+                            ),
+                          ),
+                          Flexible(
+                            child: Text(
+                              widget.albumName!,
+                              style: TextStyle(
+                                color: widget.accentColor.withValues(alpha: 0.55),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.4,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1344,13 +1528,13 @@ class _SpectrumPainter extends CustomPainter {
     final double slot = size.width / count;
     final double barW = slot * (1.0 - gapFraction);
     final double gap = slot * gapFraction;
-    final double maxH = size.height * 0.92;
+    final double maxH = size.height * 0.88;
     const double minH = 2.5;
     final double cy = size.height / 2;
     final double rx = (barW / 2).clamp(0.5, 5.0);
 
     final Rect fullRect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final double fadeH = size.height * 0.18;
+    final double fadeH = size.height * 0.16;
     final Paint fadeMaskPaint = Paint()
       ..shader = ui.Gradient.linear(
         const Offset(0, 0),
@@ -1367,56 +1551,77 @@ class _SpectrumPainter extends CustomPainter {
 
     canvas.saveLayer(fullRect, Paint());
 
+    // 반사 레이어용 saveLayer (아래쪽 절반만 희미하게)
     for (int i = 0; i < count; i++) {
       final double v = bands[i].clamp(0.0, 1.0);
       final double barH = (maxH * v).clamp(minH, maxH);
       final double x = gap / 2 + i * slot;
-      final double t =
-          count > 1 ? i / (count - 1).toDouble() : 0.0;
+      final double t = count > 1 ? i / (count - 1).toDouble() : 0.0;
 
-      final Color barColor = Color.lerp(
-        accentColor.withValues(alpha: 0.90),
-        Colors.white.withValues(alpha: 0.50),
-        t,
-      )!;
-
-      // 메인 바 (위아래 대칭 mirror)
+      // 메인 바 — 그라디언트 (accent → white)
+      final Rect barRect = Rect.fromLTRB(x, cy - barH / 2, x + barW, cy + barH / 2);
       canvas.drawRRect(
-        RRect.fromLTRBR(
-          x, cy - barH / 2, x + barW, cy + barH / 2,
-          Radius.circular(rx),
-        ),
+        RRect.fromRectAndRadius(barRect, Radius.circular(rx)),
         Paint()
-          ..color = barColor
+          ..shader = ui.Gradient.linear(
+            Offset(x, cy - barH / 2),
+            Offset(x, cy + barH / 2),
+            [
+              Color.lerp(accentColor, Colors.white, 0.25 + t * 0.35)!
+                  .withValues(alpha: 0.92),
+              accentColor.withValues(alpha: 0.55 - t * 0.20),
+              Color.lerp(accentColor, Colors.white, 0.25 + t * 0.35)!
+                  .withValues(alpha: 0.92),
+            ],
+            [0.0, 0.5, 1.0],
+          )
           ..style = PaintingStyle.fill,
       );
 
-      // 상단 하이라이트
-      if (v > 0.10) {
+      // 상단 캡 글로우
+      if (v > 0.08) {
+        final double capY = cy - barH / 2;
         canvas.drawRRect(
-          RRect.fromLTRBR(
-            x, cy - barH / 2, x + barW, cy - barH / 2 + 2.2,
-            Radius.circular(rx),
-          ),
+          RRect.fromLTRBR(x, capY, x + barW, capY + 2.5, Radius.circular(rx)),
           Paint()
-            ..color = Colors.white.withValues(alpha: 0.30 * v)
+            ..color = Colors.white.withValues(alpha: (0.55 * v).clamp(0.0, 0.55))
             ..style = PaintingStyle.fill,
         );
       }
 
-      // 저음 대역 글로우
-      if (i < 10 && v > 0.55) {
+      // 저음 대역 외부 글로우
+      if (i < 12 && v > 0.45) {
         canvas.drawRRect(
-          RRect.fromLTRBR(
-            x - 1, cy - barH / 2 - 1,
-            x + barW + 1, cy + barH / 2 + 1,
-            Radius.circular(rx + 1),
+          RRect.fromRectAndRadius(
+            barRect.inflate(1.5),
+            Radius.circular(rx + 1.5),
           ),
           Paint()
-            ..color = accentColor.withValues(alpha: 0.18 * v)
+            ..color = accentColor.withValues(alpha: 0.22 * v)
             ..style = PaintingStyle.fill
-            ..maskFilter =
-                const MaskFilter.blur(BlurStyle.normal, 3.0),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
+        );
+      }
+
+      // 반사 (아래쪽, 50% 투명도 + 짧게)
+      final double reflH = barH * 0.30;
+      final double reflTop = cy + barH / 2 + 2;
+      if (reflH > 1.5) {
+        canvas.drawRRect(
+          RRect.fromLTRBR(
+            x, reflTop, x + barW, reflTop + reflH,
+            Radius.circular(rx),
+          ),
+          Paint()
+            ..shader = ui.Gradient.linear(
+              Offset(x, reflTop),
+              Offset(x, reflTop + reflH),
+              [
+                accentColor.withValues(alpha: 0.18 * v),
+                Colors.transparent,
+              ],
+            )
+            ..style = PaintingStyle.fill,
         );
       }
     }
@@ -1425,14 +1630,14 @@ class _SpectrumPainter extends CustomPainter {
     canvas.drawRect(fullRect, fadeMaskPaint);
 
     // 좌우 비네트
-    final double vigW = size.width * 0.22;
+    final double vigW = size.width * 0.18;
     canvas.drawRect(
       Rect.fromLTWH(0, 0, vigW, size.height),
       Paint()
         ..shader = ui.Gradient.linear(
           Offset.zero,
           Offset(vigW, 0),
-          [Colors.black.withValues(alpha: 0.45), Colors.transparent],
+          [Colors.black.withValues(alpha: 0.50), Colors.transparent],
         )
         ..blendMode = BlendMode.dstOut,
     );
@@ -1442,7 +1647,7 @@ class _SpectrumPainter extends CustomPainter {
         ..shader = ui.Gradient.linear(
           Offset(size.width - vigW, 0),
           Offset(size.width, 0),
-          [Colors.transparent, Colors.black.withValues(alpha: 0.45)],
+          [Colors.transparent, Colors.black.withValues(alpha: 0.50)],
         )
         ..blendMode = BlendMode.dstOut,
     );
