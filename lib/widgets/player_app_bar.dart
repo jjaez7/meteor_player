@@ -113,22 +113,30 @@ class PlayerAppBar extends StatelessWidget {
             ),
           ),
 
-          // [중앙] 로고
-          Align(
-            alignment: Alignment.center,
-            child: Text(
-              "GLASNYL",
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                letterSpacing: 4,
-                fontSize: 13,
-                color: textColor.withValues(alpha: 0.9),
-                shadows: [
-                  Shadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 2)),
-                ],
+          // [중앙] 로고 - AESTHETIC �a�드일 때 숨김
+          if (!isEssentialMode)
+            Positioned(
+              left: 60,
+              right: 130,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Text(
+                  "GLASNYL",
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 4,
+                    fontSize: 13,
+                    color: textColor.withValues(alpha: 0.9),
+                    shadows: [
+                      Shadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 2)),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
 
           // [우측] 에센셜 토글 & 리셋 & 설정 메뉴
           Align(

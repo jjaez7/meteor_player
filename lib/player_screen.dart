@@ -62,8 +62,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
 
   // ── 가로 모드 하단 패널 토글 (볼륨 ↔ 가사), 기본: 볼륨
   bool _landscapeShowLyrics = false;
+  bool _isReturningFromBackground = false; // 앱 복귀 후 가사 재싱크 트리거
   int _clockTapCount = 0;
   Timer? _clockTapTimer;
+  Timer? _aestheticSyncTimer; // AESTHETIC 모드: 곡 변경/앱 복귀 후 10초 자동 싱크
 
   // ── 세로 모드 상단 패널 토글 (턴테이블 ↔ 가사), 기본: 턴테이블
   bool _portraitShowLyrics = false;
@@ -199,6 +201,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         if (_isConcertMode) {
           _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
         }
+        _scheduleAestheticSync(); // AESTHETIC 모드: 10초 후 자동 싱크
       }
     });
 
@@ -254,6 +257,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     _accessCheckTimer?.cancel();
     _clockTapTimer?.cancel();
     _portraitClockTapTimer?.cancel();
+    _aestheticSyncTimer?.cancel();
     _mediaStatusSub?.cancel();
     _notificationSub?.cancel();
     _volumeSub?.cancel();
@@ -271,6 +275,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _durationRetryCount = 0;
+      // 가사가 켜진 상태에서 복귀하면 재싱크 트리거
+      if (_landscapeShowLyrics || _portraitShowLyrics) {
+        _isReturningFromBackground = true;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _fetchInitialStatus();
@@ -280,6 +288,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             if (mounted) _syncLyricsPosition();
           });
         }
+        _scheduleAestheticSync(); // AESTHETIC: 앱 복귀 후 10초 자동 싱크
       });
     }
   }
@@ -363,7 +372,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       }
     }
 
-    if (mounted) setState(() => _isEssentialMode = !_isEssentialMode);
+    if (mounted) {
+      final bool turningOn = !_isEssentialMode;
+      setState(() => _isEssentialMode = turningOn);
+      if (turningOn) {
+        _scheduleAestheticSync();
+      } else {
+        _aestheticSyncTimer?.cancel();
+      }
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -526,8 +543,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             _currentAlbumName = result.meta.albumName;
           }
         });
+
+        // 앱 복귀 후 가사 동기화가 완료되면 위치 싱크
+        if (_isReturningFromBackground && result.lyrics.isNotEmpty) {
+          _isReturningFromBackground = false;
+          _syncLyricsPosition();
+        }
       }
     } catch (e) {
+      _isReturningFromBackground = false;
       if (mounted && token == _lastRequestToken && _lyrics.isEmpty) {
         setState(() {
           _currentStatus = (e is TimeoutException)
@@ -676,6 +700,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
       if (_isConcertMode) {
         _concertKey.currentState?.onTrackChange(accentColor: _playBtnColor);
       }
+      _scheduleAestheticSync();
 
       if (_albumArtBytes == null || _albumArtBytes!.isEmpty) {
         for (int i = 0; i < 3; i++) {
@@ -753,6 +778,10 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             ? Uint8List.fromList(List<int>.from(artResult))
             : null;
 
+        if (data['position'] != null) {
+          final int posMs = (data['position'] as num).toInt();
+          _positionNotifier.value = Duration(milliseconds: posMs);
+        }
         setState(() {
           _currentTitle = data['title'] ?? "Ready to Play";
           _currentArtist = (data['artist'] ?? "GLASNYL").toUpperCase();
@@ -977,6 +1006,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         lyrics: _lyrics.whereType<LyricLine>().toList(),
                         positionNotifier: _positionNotifier,
                         isLyricsLoading: _currentStatus == LyricStatus.loading,
+                        onLyricsActivated: _syncLyricsPosition, // LRC 토글 = 시계 3탭
                       ),
                     ),
                   ),
@@ -1284,6 +1314,18 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
         _clockTapCount = 0;
       });
     }
+  }
+
+  // AESTHETIC 모드: 10초 후 자동 싱크 (곡 변경 / 앱 복귀)
+  void _scheduleAestheticSync() {
+    if (!_isEssentialMode) return;
+    _aestheticSyncTimer?.cancel();
+    _aestheticSyncTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted && _isEssentialMode) {
+        HapticFeedback.selectionClick();
+        _syncLyricsPosition();
+      }
+    });
   }
 
   Future<void> _syncLyricsPosition() async {

@@ -38,6 +38,7 @@ class EssentialView extends StatefulWidget {
   final List<LyricLine> lyrics;
   final ValueNotifier<Duration> positionNotifier;
   final bool isLyricsLoading; // 가사 로딩 중 여부
+  final VoidCallback? onLyricsActivated; // LRC 토글 시 시계 3번 탭과 동일 횬고
 
   const EssentialView({
     super.key,
@@ -51,6 +52,7 @@ class EssentialView extends StatefulWidget {
     this.lyrics = const [],
     required this.positionNotifier,
     this.isLyricsLoading = false,
+    this.onLyricsActivated,
   });
 
   @override
@@ -313,20 +315,7 @@ class _EssentialViewState extends State<EssentialView>
         alpha: 0.55 + _rand.nextDouble() * 0.25,
         speed: 80.0 + _rand.nextDouble() * 40.0,
       ));
-      final int count = 6 + _rand.nextInt(8);
-      for (int i = 0; i < count; i++) {
-        final angle = _rand.nextDouble() * math.pi * 2;
-        final speed = 30.0 + _rand.nextDouble() * 70.0;
-        _particles.add(_Particle(
-          x: 0.0,
-          y: 0.0,
-          vx: math.cos(angle) * speed,
-          vy: math.sin(angle) * speed,
-          alpha: 0.6 + _rand.nextDouble() * 0.3,
-          life: 0.6 + _rand.nextDouble() * 0.4,
-          radius: 1.5 + _rand.nextDouble() * 2.5,
-        ));
-      }
+      // ㌐파티클 제거 (issue 6)
     }
     _lastBeatPulse = _beatPulse;
 
@@ -358,7 +347,11 @@ class _EssentialViewState extends State<EssentialView>
       _specMode = nextMode;
     });
 
-    if (nextMode == _SpectrumMode.auto || nextMode == _SpectrumMode.lyrics) {
+    if (nextMode == _SpectrumMode.lyrics) {
+      // LRC 토글 시 시계 3탭 횬고 효과
+      widget.onLyricsActivated?.call();
+      if (!_useSimulation) _startSimulation();
+    } else if (nextMode == _SpectrumMode.auto) {
       if (!_useSimulation) _startSimulation();
     } else {
       _simTicker?.stop();
@@ -408,7 +401,7 @@ class _EssentialViewState extends State<EssentialView>
 
     final double labelTop = isLandscape
         ? topPad + (screenH - topPad) * 0.14
-        : topPad + (screenH - topPad) * 0.26;
+        : topPad + (screenH - topPad) * 0.22;
 
     final double specW = screenW * 0.80;
     final double specLeft = (screenW - specW) / 2;
@@ -417,7 +410,12 @@ class _EssentialViewState extends State<EssentialView>
         ? (screenH * 0.34).clamp(90.0, 220.0)
         : (screenH * 0.25).clamp(110.0, 220.0);
 
-    final double specTop = labelTop + 68.0 + 14.0;
+    // portrait: label(68) + gap(16) + toggle(24) + gap(12) = specTop
+    // landscape: original position (label + 68 + 14), toggle at specTop-28
+    final double specTop = isLandscape
+        ? labelTop + 68.0 + 14.0
+        : labelTop + 68.0 + 16.0 + 24.0 + 12.0;
+    final double toggleTop = labelTop + 68.0 + 16.0; // portrait only
 
     final double ringCx = screenW / 2;
     final double ringCy = specTop + specH / 2;
@@ -514,16 +512,31 @@ class _EssentialViewState extends State<EssentialView>
                 ),
               ),
 
-              // ── 내부 모드 토글 (AUTO ↔ FREQ ↔ LYRICS) — 스펙트럼 위 우측
-              Positioned(
-                top: specTop - 28,
-                right: specLeft,
-                child: _InternalModeToggle(
-                  mode: _specMode,
-                  accentColor: widget.accentColor,
-                  onToggle: _onToggleMode,
+              // ── 내부 모드 토글 (AUTO ↔ FREQ ↔ LYRICS)
+              // portrait: GLASNYL 아래 중앙 / landscape: 스펙트럼 위 우측 (원래 위치)
+              if (isLandscape)
+                Positioned(
+                  top: specTop - 28,
+                  right: specLeft,
+                  child: _InternalModeToggle(
+                    mode: _specMode,
+                    accentColor: widget.accentColor,
+                    onToggle: _onToggleMode,
+                  ),
+                )
+              else
+                Positioned(
+                  top: toggleTop,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: _InternalModeToggle(
+                      mode: _specMode,
+                      accentColor: widget.accentColor,
+                      onToggle: _onToggleMode,
+                    ),
+                  ),
                 ),
-              ),
 
               // ── 하단 곡 정보
               Positioned(
@@ -1069,7 +1082,7 @@ class _AestheticLyricsScroller extends StatefulWidget {
 }
 
 class _AestheticLyricsScrollerState extends State<_AestheticLyricsScroller>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late Ticker _ticker;
 
   int _lastIndex = -1;
@@ -1087,6 +1100,7 @@ class _AestheticLyricsScrollerState extends State<_AestheticLyricsScroller>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _glowController = AnimationController(
       vsync: this,
@@ -1196,9 +1210,28 @@ class _AestheticLyricsScrollerState extends State<_AestheticLyricsScroller>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _glowController.dispose();
     super.dispose();
+  }
+
+  // App resumed -> resync lyrics position (issues 4, 5)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _basePosition = widget.currentPosition;
+      _elapsedSinceSync = Duration.zero;
+      _lastTickerCheck = Duration.zero;
+      final int newIdx = _calculateCurrentIndex(_basePosition);
+      _lastIndex = newIdx;
+      _maxIndexReached = newIdx;
+      if (widget.isPlaying && !_ticker.isTicking) _ticker.start();
+      if (mounted) setState(() {});
+    }
+    if (state == AppLifecycleState.paused) {
+      if (_ticker.isTicking) _ticker.stop();
+    }
   }
 
   @override
