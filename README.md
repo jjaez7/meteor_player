@@ -525,7 +525,7 @@ Both are foundational topics in digital signal processing (STFT, Mel filterbanks
 ---
 
 <p align="center">
-  Built solo · Dec 2025 – Present<br/>
+  Built solo · June 2026 – Present<br/>
   <a href="https://play.google.com/store/apps/details?id=com.glasnyl.app">Google Play</a> ·
   <a href="https://youtube.com/shorts/TT0jgLfhIPo">Demo</a> ·
   <a href="https://github.com/jjaez7/meteor_player.git">GitHub</a>
