@@ -30,25 +30,31 @@ class EditableElement extends StatelessWidget {
           child,
 
           // 2. 편집 모드일 때만 '위에' 덮개 레이어를 씌움
+          // Fluid AI 톤: 편집 모드 진입/해제가 딱 끊기지 않고 fade로 이어짐
           if (isEditMode)
             Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onScaleUpdate: (details) {
-                  if (details.pointerCount == 1) {
-                    onDrag(details.focalPointDelta);
-                  } else if (details.scale != 1.0) {
-                    double delta = (details.scale > 1.0) ? 2.0 : -2.0;
-                    onResizeDelta(delta);
-                  }
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.5),
-                      width: 2,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                opacity: 1.0,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onScaleUpdate: (details) {
+                    if (details.pointerCount == 1) {
+                      onDrag(details.focalPointDelta);
+                    } else if (details.scale != 1.0) {
+                      double delta = (details.scale > 1.0) ? 2.0 : -2.0;
+                      onResizeDelta(delta);
+                    }
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.5),
+                        width: 2,
+                      ),
+                      color: Colors.transparent, // 투명하지만 터치는 받는 영역
                     ),
-                    color: Colors.transparent, // 투명하지만 터치는 받는 영역
                   ),
                 ),
               ),

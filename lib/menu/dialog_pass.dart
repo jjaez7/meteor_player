@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/ad_service.dart';
+import '../theme/design_tokens.dart';
 
 void showPassDialog(BuildContext context, VoidCallback onUpdated) async {
   bool hasPass = await AdService.isFullAccess();
@@ -76,14 +77,15 @@ void showPassDialog(BuildContext context, VoidCallback onUpdated) async {
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(30),
+                          borderRadius: BorderRadius.circular(GRadius.popup),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.2),
                             width: 1.5,
                           ),
+                          boxShadow: GShadow.forLevel(GElevation.popup),
                         ),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(30),
+                          borderRadius: BorderRadius.circular(GRadius.popup),
                           child: SingleChildScrollView(
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.symmetric(
@@ -239,7 +241,7 @@ Widget _buildGlassContainer({required Widget child, EdgeInsets? padding}) {
     padding: padding ?? const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: Colors.white.withValues(alpha: 0.05),
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(GRadius.mediumCard),
       border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
     ),
     child: child,
@@ -263,7 +265,7 @@ Widget _buildActionButton({
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(GRadius.mediumCard),
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(

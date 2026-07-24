@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../theme/design_tokens.dart';
 
 /// 인스타 공유용 Now Playing 카드
 /// vinyl_component.dart 의 VinylDisk 디자인 적용
@@ -467,7 +468,7 @@ class _BottomInfo extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(GRadius.mediumCard),
                       border: Border.all(
                         color: Colors.white.withValues(alpha: 0.12),
                         width: 0.8,

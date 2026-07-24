@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'release_notes.dart';
+import '../theme/design_tokens.dart';
 
 // 무제한 활성화 비밀 코드 (원하는 값으로 변경하세요)
 const String _secretCode = "ZNLABS2025";
@@ -109,7 +110,7 @@ class _CreatorDialogState extends State<_CreatorDialog> {
         backgroundColor: Colors.white.withValues(alpha: 0.1),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
+          borderRadius: BorderRadius.circular(GRadius.popup),
           side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
         ),
         contentPadding: const EdgeInsets.all(24),
@@ -366,7 +367,7 @@ class _CreatorDialogState extends State<_CreatorDialog> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(GRadius.mediumCard),
                       border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                     ),
                     child: Row(
@@ -404,7 +405,7 @@ class _CreatorDialogState extends State<_CreatorDialog> {
 // 공통 글래스모피즘 위젯
 // ─────────────────────────────────────
 
-Widget _buildGlassContainer({required Widget child, EdgeInsets? padding, double borderRadius = 20}) {
+Widget _buildGlassContainer({required Widget child, EdgeInsets? padding, double borderRadius = GRadius.mediumCard}) {
   return Container(
     padding: padding ?? const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -509,7 +510,7 @@ Widget _buildGlassButton(BuildContext context, String label, Color accent) {
         gradient: LinearGradient(
           colors: [accent.withValues(alpha: 0.3), accent.withValues(alpha: 0.1)],
         ),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(GRadius.mediumCard),
         border: Border.all(color: accent.withValues(alpha: 0.4)),
       ),
       child: Text(

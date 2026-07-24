@@ -1,5 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../theme/glass_material.dart';
+import '../theme/design_tokens.dart';
 
 void showLayoutDialog({
   required BuildContext context,
@@ -16,24 +17,15 @@ void showLayoutDialog({
     context: context,
     barrierDismissible: true,
     barrierLabel: '',
-    transitionDuration: const Duration(milliseconds: 300),
-    pageBuilder: (context, anim1, anim2) => Container(),
-    transitionBuilder: (context, anim1, anim2, child) {
-      return Transform.scale(
-        scale: Curves.easeOutBack.transform(anim1.value),
-        child: Opacity(
-          opacity: anim1.value,
-          child: BackdropFilter(
-            // [1] 배경 블러 처리
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: AlertDialog(
-              backgroundColor: Colors.white.withValues(alpha: 0.1), // 반투명 유리 배경
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5), // 유리 테두리
-              ),
-              title: Text(
+    // Popup motion 토큰: scale+opacity, 오버슈트/바운스 없이 차분하게
+    transitionDuration: GMotion.popupDuration,
+    pageBuilder: (context, anim1, anim2) => GlassPopupShell(
+      accentColor: playBtnColor,
+      maxWidth: 360,
+      child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
                 "LAYOUT EDIT",
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -43,10 +35,7 @@ void showLayoutDialog({
                   color: glassTextColor,
                 ),
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 10),
+                const SizedBox(height: 10),
                   // 편집 모드 스위치 타일
                   _buildGlassTile(
                     "Enable Edit Mode",
@@ -79,7 +68,7 @@ void showLayoutDialog({
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(GRadius.mediumCard),
                     ),
                     child: Text(
                       "In edit mode, you can drag components\nto customize your own player layout.",
@@ -90,12 +79,11 @@ void showLayoutDialog({
                   const SizedBox(height: 24),
                   // 닫기 버튼
                   _buildGlassButton(context, "DONE", glassTextColor),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
+              ],
+      ),
+    ),
+    transitionBuilder: (context, anim1, anim2, child) {
+      return FadeTransition(opacity: anim1, child: child);
     },
   );
 }
@@ -108,7 +96,7 @@ Widget _buildGlassTile(String title, Widget trailing) {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     decoration: BoxDecoration(
       color: Colors.white.withValues(alpha: 0.05), // 극소량의 화이트로 면 분할
-      borderRadius: BorderRadius.circular(15),
+      borderRadius: BorderRadius.circular(GRadius.mediumCard),
       border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
     ),
     child: Row(
@@ -134,7 +122,7 @@ Widget _buildGlassButton(BuildContext context, String label, Color textColor) {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(GRadius.mediumCard),
         border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
       ),
       child: Text(

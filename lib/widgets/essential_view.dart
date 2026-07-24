@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import '../models/lyric_model.dart';
+import 'fluid/fluid_kit.dart';
+import '../theme/design_tokens.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EssentialView  —  GLASNYL AESTHETIC 모드  (v2)
@@ -21,6 +24,12 @@ import '../models/lyric_model.dart';
 //   • _LyricsLineView → _AestheticLyricsScroller 로 교체
 //   • LP 모드(_LyricsAutoScroller)와 완전히 동일한 싱크 로직 사용
 //   • 디자인만 aesthetic (prev/current/next 3줄 + 글로우 pulse) 유지
+//
+// 변경점 (v4) — 하단 플레이어 자유 배치
+//   • 하단 정보 바를 자유롭게 드래그 + 모서리로 리사이즈 가능하게 변경
+//   • prev/play/next 버튼 추가
+//   • 크게 리사이즈하면 정사각형 앨범아트를 끌어와 빈 공간을 채우는 확장 레이아웃으로 전환
+//   • 위치/크기는 SharedPreferences에 저장되어 다음 실행에도 유지됨
 //
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -39,6 +48,9 @@ class EssentialView extends StatefulWidget {
   final ValueNotifier<Duration> positionNotifier;
   final bool isLyricsLoading; // 가사 로딩 중 여부
   final VoidCallback? onLyricsActivated; // LRC 토글 시 시계 3번 탭과 동일 횬고
+  final VoidCallback? onTogglePlay;
+  final VoidCallback? onSkipNext;
+  final VoidCallback? onSkipPrevious;
 
   const EssentialView({
     super.key,
@@ -53,6 +65,9 @@ class EssentialView extends StatefulWidget {
     required this.positionNotifier,
     this.isLyricsLoading = false,
     this.onLyricsActivated,
+    this.onTogglePlay,
+    this.onSkipNext,
+    this.onSkipPrevious,
   });
 
   @override
@@ -112,9 +127,107 @@ class _EssentialViewState extends State<EssentialView>
   // ── 토글 애니메이션 컨트롤러
   late final AnimationController _toggleAnim;
 
+  // ── (v4) 커스텀 타이틀 / 포커스 모드 / 하단 플레이어 자유 배치
+  String? _customTitle; // null이면 기본 "AESTHETIC" 표시
+  bool _focusMode = false; // true면 배경+하단플레이어+가사 외엔 다 숨김
+  Offset _footerOffset = Offset.zero; // 기본 위치 대비 드래그 이동량
+  double _footerWidthDelta = 0.0; // 기본 너비 대비 리사이즈 증감량
+  double _footerHeightDelta = 0.0; // 기본 높이 대비 리사이즈 증감량
+  static const String _kCustomTitleKey = 'essential_custom_title';
+  static const String _kFocusModeKey = 'essential_focus_mode';
+  static const String _kFooterDxKey = 'essential_footer_dx';
+  static const String _kFooterDyKey = 'essential_footer_dy';
+  static const String _kFooterWKey = 'essential_footer_w_delta';
+  static const String _kFooterHKey = 'essential_footer_h_delta';
+
+  Future<void> _loadFooterPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _customTitle = prefs.getString(_kCustomTitleKey);
+      _focusMode = prefs.getBool(_kFocusModeKey) ?? false;
+      _footerOffset = Offset(
+        prefs.getDouble(_kFooterDxKey) ?? 0.0,
+        prefs.getDouble(_kFooterDyKey) ?? 0.0,
+      );
+      _footerWidthDelta = prefs.getDouble(_kFooterWKey) ?? 0.0;
+      _footerHeightDelta = prefs.getDouble(_kFooterHKey) ?? 0.0;
+    });
+  }
+
+  Future<void> _saveFooterTransform() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_kFooterDxKey, _footerOffset.dx);
+    await prefs.setDouble(_kFooterDyKey, _footerOffset.dy);
+    await prefs.setDouble(_kFooterWKey, _footerWidthDelta);
+    await prefs.setDouble(_kFooterHKey, _footerHeightDelta);
+  }
+
+  Future<void> _saveCustomTitle(String? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null || value.trim().isEmpty) {
+      await prefs.remove(_kCustomTitleKey);
+    } else {
+      await prefs.setString(_kCustomTitleKey, value.trim());
+    }
+  }
+
+  Future<void> _saveFocusMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kFocusModeKey, value);
+  }
+
+  Future<void> _renameTitle() async {
+    final controller = TextEditingController(text: _customTitle ?? 'AESTHETIC');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1B20).withValues(alpha: 0.92),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(GRadius.mediumCard),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+        ),
+        title: const Text(
+          'Change Title',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          style: const TextStyle(color: Colors.white, letterSpacing: 4),
+          decoration: InputDecoration(
+            hintText: 'AESTHETIC',
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, ''), // 빈 문자열 = 기본값 복원
+            child: Text('Default', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text('Save', style: TextStyle(color: widget.accentColor)),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return; // 취소
+    final newTitle = result.trim().isEmpty ? null : result.trim().toUpperCase();
+    if (!mounted) return;
+    setState(() => _customTitle = newTitle);
+    _saveCustomTitle(newTitle);
+  }
+
   @override
   void initState() {
     super.initState();
+
+    _loadFooterPrefs();
 
     _phaseOffset =
         List.generate(_bandCount, (_) => _rand.nextDouble() * math.pi * 2);
@@ -420,6 +533,23 @@ class _EssentialViewState extends State<EssentialView>
     final double ringCx = screenW / 2;
     final double ringCy = specTop + specH / 2;
 
+    // ── (v4) 하단 플레이어 자유 배치 — 기본 위치/크기에 드래그·리사이즈 증감량 적용
+    final double footerBaseLeft = mq.padding.left + 28;
+    final double footerBaseRight = mq.padding.right + 28;
+    final double footerBaseWidth = screenW - footerBaseLeft - footerBaseRight;
+    const double footerBaseHeight = 76.0;
+    final double footerBaseTop =
+        screenH - (mq.padding.bottom + 32.0) - footerBaseHeight;
+
+    final double footerWidth =
+        (footerBaseWidth + _footerWidthDelta).clamp(180.0, screenW - 20.0);
+    final double footerHeight =
+        (footerBaseHeight + _footerHeightDelta).clamp(64.0, screenH * 0.7);
+    final double footerLeft = (footerBaseLeft + _footerOffset.dx)
+        .clamp(0.0, math.max(0.0, screenW - footerWidth));
+    final double footerTop = (footerBaseTop + _footerOffset.dy)
+        .clamp(mq.padding.top, math.max(mq.padding.top, screenH - mq.padding.bottom - footerHeight));
+
     return SizedBox.expand(
       child: FadeTransition(
         opacity: _enterFade,
@@ -427,24 +557,52 @@ class _EssentialViewState extends State<EssentialView>
           position: _enterSlide,
           child: Stack(
             children: [
-              // ── 앨범아트 블러 배경
+              // ── 앨범아트 블러 배경 (스펙: brightness -8%, saturation -8%, contrast +3%)
               if (widget.albumArtBytes != null)
                 Positioned.fill(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 800),
                     child: SizedBox.expand(
                       key: ValueKey(widget.albumArtBytes.hashCode),
-                      child: ImageFiltered(
-                        imageFilter: ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                        child: Image.memory(
-                          widget.albumArtBytes!,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
+                      child: ColorFiltered(
+                        // 계산된 고정 컬러 그레이딩 행렬 (brightness*contrast 스케일 +
+                        // saturation 블렌드 + contrast translate). 입력값이 고정이라
+                        // 매 프레임 재계산 없이 상수로 둠 — 성능에 영향 없음.
+                        colorFilter: const ColorFilter.matrix(<double>[
+                          0.8946, 0.0445, 0.0086, 0, -3.84,
+                          0.0227, 0.9163, 0.0086, 0, -3.84,
+                          0.0227, 0.0445, 0.8806, 0, -3.84,
+                          0, 0, 0, 1, 0,
+                        ]),
+                        child: ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+                          child: Image.memory(
+                            widget.albumArtBytes!,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+              // ── 소프트 비네트 (스펙: opacity 8% 미만, 가장자리만 은은하게)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        radius: 1.0,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.07),
+                        ],
+                        stops: const [0.6, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               // ── 위에 어두운 오버레이 (가독성 확보)
               Positioned.fill(
                 child: DecoratedBox(
@@ -463,45 +621,87 @@ class _EssentialViewState extends State<EssentialView>
                 ),
               ),
 
+              // ── (v4) 좌/우 가장자리 탭 — 오른쪽: 다음 곡, 왼쪽: 이전 곡
+              // 다른 컨트롤(버튼, 하단 플레이어 등)보다 먼저 쌓아서, 겹치는 영역은
+              // 나중에 그려지는 위젯이 우선권을 가져 설정/버튼 탭이 씹히지 않음
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 64,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: widget.onSkipPrevious,
+                ),
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: 64,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: widget.onSkipNext,
+                ),
+              ),
+
+              // ── 앰비언트 halo (FFT 뒤편, 아주 은은하게 숨쉬는 accent 톤)
+              if (!_focusMode)
+                Positioned(
+                  left: ringCx - specW * 0.6,
+                  top: ringCy - specW * 0.6,
+                  width: specW * 1.2,
+                  height: specW * 1.2,
+                  child: RepaintBoundary(
+                    child: _AccentHalo(accentColor: widget.accentColor),
+                  ),
+                ),
+
               // ── 비트 링 + 파티클 레이어
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _repaintTick,
-                    builder: (_, _, _) => CustomPaint(
-                      painter: _BeatEffectPainter(
-                        rings: List.of(_beatRings),
-                        particles: List.of(_particles),
-                        cx: ringCx,
-                        cy: ringCy,
+              if (!_focusMode)
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _repaintTick,
+                      builder: (_, _, _) => CustomPaint(
+                        painter: _BeatEffectPainter(
+                          rings: List.of(_beatRings),
+                          particles: List.of(_particles),
+                          cx: ringCx,
+                          cy: ringCy,
+                          accentColor: widget.accentColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ── AESTHETIC 레이블 (탭하면 이름 변경 가능)
+              if (!_focusMode)
+                Positioned(
+                  top: labelTop,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: _renameTitle,
+                      child: _EssentialLabel(
+                        text: _customTitle ?? 'AESTHETIC',
+                        textColor: widget.textColor,
                         accentColor: widget.accentColor,
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // ── AESTHETIC 레이블
-              Positioned(
-                top: labelTop,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _EssentialLabel(
-                    textColor: widget.textColor,
-                    accentColor: widget.accentColor,
-                  ),
-                ),
-              ),
-
-              // ── FFT 스펙트럼 (LYRICS 모드에서는 숨김)
+              // ── FFT 스펙트럼 (LYRICS 모드 또는 포커스 모드에서는 숨김)
               Positioned(
                 top: specTop,
                 left: specLeft,
                 width: specW,
                 height: specH,
                 child: AnimatedOpacity(
-                  opacity: _specMode == _SpectrumMode.lyrics ? 0.0 : 1.0,
+                  opacity: (_specMode == _SpectrumMode.lyrics || _focusMode) ? 0.0 : 1.0,
                   duration: const Duration(milliseconds: 300),
                   child: RepaintBoundary(
                     child: ValueListenableBuilder<int>(
@@ -518,14 +718,14 @@ class _EssentialViewState extends State<EssentialView>
                 ),
               ),
 
-              // ── 가사 한 줄 오버레이 (LYRICS 모드)
+              // ── 가사 한 줄 오버레이 (LYRICS 모드 또는 포커스 모드에서 표시)
               Positioned(
                 top: specTop,
                 left: specLeft - 16,
                 width: specW + 32,
                 height: specH,
                 child: AnimatedOpacity(
-                  opacity: _specMode == _SpectrumMode.lyrics ? 1.0 : 0.0,
+                  opacity: (_specMode == _SpectrumMode.lyrics || _focusMode) ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 300),
                   child: _LyricsLineView(
                     key: ValueKey('${widget.title}_${widget.lyrics.length}'),
@@ -539,55 +739,146 @@ class _EssentialViewState extends State<EssentialView>
                 ),
               ),
 
-              // ── 주파수 힌트 레이블 (SUB / MID / HI) — LYRICS 모드에서 숨김
-              Positioned(
-                top: specTop + specH + 8,
-                left: specLeft,
-                width: specW,
-                child: AnimatedOpacity(
-                  opacity: _specMode == _SpectrumMode.lyrics ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: _FreqLabels(accentColor: widget.accentColor),
-                ),
-              ),
-
-              // ── 내부 모드 토글 (AUTO ↔ FREQ ↔ LYRICS)
-              // portrait: GLASNYL 아래 중앙 / landscape: 스펙트럼 위 우측 (원래 위치)
-              if (isLandscape)
+              // ── 주파수 힌트 레이블 (SUB / MID / HI) — LYRICS/포커스 모드에서 숨김
+              if (!_focusMode)
                 Positioned(
-                  top: specTop - 28,
-                  right: specLeft,
-                  child: _InternalModeToggle(
-                    mode: _specMode,
-                    accentColor: widget.accentColor,
-                    onToggle: _onToggleMode,
+                  top: specTop + specH + 8,
+                  left: specLeft,
+                  width: specW,
+                  child: AnimatedOpacity(
+                    opacity: _specMode == _SpectrumMode.lyrics ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: _FreqLabels(accentColor: widget.accentColor),
                   ),
-                )
-              else
-                Positioned(
-                  top: toggleTop,
-                  left: 0,
-                  right: 0,
-                  child: Center(
+                ),
+
+              // ── 내부 모드 토글 (AUTO ↔ FREQ ↔ LYRICS) — 포커스 모드에서 숨김
+              // portrait: GLASNYL 아래 중앙 / landscape: 스펙트럼 위 우측 (원래 위치)
+              if (!_focusMode)
+                if (isLandscape)
+                  Positioned(
+                    top: specTop - 28,
+                    right: specLeft,
                     child: _InternalModeToggle(
                       mode: _specMode,
                       accentColor: widget.accentColor,
                       onToggle: _onToggleMode,
                     ),
+                  )
+                else
+                  Positioned(
+                    top: toggleTop,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: _InternalModeToggle(
+                        mode: _specMode,
+                        accentColor: widget.accentColor,
+                        onToggle: _onToggleMode,
+                      ),
+                    ),
                   ),
-                ),
 
-              // ── 하단 곡 정보
+              // ── 하단 곡 정보 — 자유 드래그 + 모서리 리사이즈
               Positioned(
-                bottom: mq.padding.bottom + 32.0,
-                left: mq.padding.left + 28,
-                right: mq.padding.right + 28,
-                child: _EssentialFooter(
-                  title: widget.title,
-                  artist: widget.artist,
-                  albumName: widget.albumName,
-                  isPlaying: widget.isPlaying,
-                  accentColor: widget.accentColor,
+                left: footerLeft,
+                top: footerTop,
+                width: footerWidth,
+                height: footerHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GestureDetector(
+                      onPanUpdate: (d) {
+                        setState(() => _footerOffset += d.delta);
+                      },
+                      onPanEnd: (_) => _saveFooterTransform(),
+                      child: _EssentialFooter(
+                        title: widget.title,
+                        artist: widget.artist,
+                        albumName: widget.albumName,
+                        isPlaying: widget.isPlaying,
+                        accentColor: widget.accentColor,
+                        albumArtBytes: widget.albumArtBytes,
+                        width: footerWidth,
+                        height: footerHeight,
+                        onTogglePlay: widget.onTogglePlay,
+                        onSkipNext: widget.onSkipNext,
+                        onSkipPrevious: widget.onSkipPrevious,
+                      ),
+                    ),
+                    // 리사이즈 손잡이 (우하단 모서리)
+                    Positioned(
+                      right: -8,
+                      bottom: -8,
+                      child: GestureDetector(
+                        onPanUpdate: (d) {
+                          setState(() {
+                            _footerWidthDelta += d.delta.dx;
+                            _footerHeightDelta += d.delta.dy;
+                          });
+                        },
+                        onPanEnd: (_) => _saveFooterTransform(),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: widget.accentColor.withValues(alpha: 0.85),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.open_in_full_rounded,
+                            size: 13,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── (v4) 포커스 모드 토글 — 항상 표시(포커스 중에도 꺼야 하니까)
+              // 상단(설정 버튼과 겹침) 대신 우하단, 하단 플레이어 바로 위에 배치.
+              // footerTop을 기준으로 붙여서 하단 플레이어를 드래그/리사이즈 해도
+              // 항상 그 위쪽에 떠 있고, 상단 세이프존 아래로는 내려가지 않도록 clamp.
+              Positioned(
+                top: (footerTop - 44).clamp(
+                  mq.padding.top + 12,
+                  screenH - mq.padding.bottom - 44,
+                ),
+                right: mq.padding.right + 16,
+                child: _AestheticPressScale(
+                  onTap: () {
+                    setState(() => _focusMode = !_focusMode);
+                    _saveFocusMode(_focusMode);
+                    // 포커스 모드 진입/해제 시 가사가 밀리는 문제 방지 → 재싱크
+                    widget.onLyricsActivated?.call();
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.08),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: Icon(
+                      _focusMode
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      size: 17,
+                      color: Colors.white.withValues(alpha: 0.75),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -614,9 +905,8 @@ class _InternalModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _AestheticPressScale(
       onTap: onToggle,
-      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeInOut,
@@ -799,12 +1089,119 @@ class _BeatEffectPainter extends CustomPainter {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// _AccentHalo — FFT 뒤편의 거의 안 보이는 숨쉬는 accent glow
+// (스펙: 9초 주기, scale 98%↔102%, opacity 4~5% — 의식적으로 알아채긴 힘들지만
+// 분위기는 채워주는 정도. 성능: 단일 AnimationController + Transform.scale만
+// 사용해 리레이아웃 없이 리페인트만 발생)
+// ──────────────────────────────────────────────────────────────────────────────
+class _AccentHalo extends StatefulWidget {
+  final Color accentColor;
+  const _AccentHalo({required this.accentColor});
+
+  @override
+  State<_AccentHalo> createState() => _AccentHaloState();
+}
+
+class _AccentHaloState extends State<_AccentHalo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 9),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) {
+          final double t = Curves.easeInOut.transform(_ctrl.value);
+          final double scale = 0.98 + 0.04 * t; // 98% ↔ 102%
+          return Transform.scale(
+            scale: scale,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    widget.accentColor.withValues(alpha: 0.045),
+                    widget.accentColor.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// _AestheticPressScale — AESTHETIC 모드 전용 버튼 마이크로 인터랙션
+// (스펙: press 1.00→0.96 90ms / release 180ms, 바운스·스프링 없음)
+// ──────────────────────────────────────────────────────────────────────────────
+class _AestheticPressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  const _AestheticPressScale({required this.child, this.onTap});
+
+  @override
+  State<_AestheticPressScale> createState() => _AestheticPressScaleState();
+}
+
+class _AestheticPressScaleState extends State<_AestheticPressScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 90), // press
+    reverseDuration: const Duration(milliseconds: 180), // release
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) => _ctrl.reverse(),
+      onTapCancel: () => _ctrl.reverse(),
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, child) {
+          // 바운스/스프링 없이 선형 보간만 사용
+          final double scale = 1.0 - (_ctrl.value * 0.04);
+          return Transform.scale(scale: scale, child: child);
+        },
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // _EssentialLabel
 // ──────────────────────────────────────────────────────────────────────────────
 class _EssentialLabel extends StatefulWidget {
   final Color textColor;
   final Color accentColor;
-  const _EssentialLabel({required this.textColor, required this.accentColor});
+  final String text;
+  const _EssentialLabel({
+    required this.textColor,
+    required this.accentColor,
+    this.text = 'AESTHETIC',
+  });
 
   @override
   State<_EssentialLabel> createState() => _EssentialLabelState();
@@ -817,10 +1214,22 @@ class _EssentialLabelState extends State<_EssentialLabel>
   @override
   void initState() {
     super.initState();
+    // 스펙: 계속 반짝이는 게 아니라 "화면 열릴 때 / 곡 바뀔 때"만 250ms fade.
+    // 항상 도는 AnimationController 대신 1회성 forward만 사용 — 불필요한
+    // 리빌드가 없어져 성능(배터리)에도 도움.
     _glow = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2800),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 250),
+    )..forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EssentialLabel old) {
+    super.didUpdateWidget(old);
+    // 곡이 바뀌면(accentColor 변경) 짧게 다시 fade-in
+    if (old.accentColor != widget.accentColor) {
+      _glow.forward(from: 0);
+    }
   }
 
   @override
@@ -834,7 +1243,8 @@ class _EssentialLabelState extends State<_EssentialLabel>
     return AnimatedBuilder(
       animation: _glow,
       builder: (_, __) {
-        final double g = 0.18 + _glow.value * 0.28;
+        // 정지된 은은한 값 — 더 이상 무한 반복으로 숨쉬지 않고, 페이드인 후 고정
+        final double g = 0.30 * Curves.easeOut.transform(_glow.value);
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -854,11 +1264,11 @@ class _EssentialLabelState extends State<_EssentialLabel>
               ),
             ),
             Text(
-              'AESTHETIC',
+              widget.text,
               style: TextStyle(
                 fontSize: 32,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 10.0,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 20.0,
                 color: Colors.white.withValues(alpha: 0.92),
                 shadows: [
                   Shadow(
@@ -920,6 +1330,12 @@ class _EssentialFooter extends StatefulWidget {
   final String? albumName;
   final bool isPlaying;
   final Color accentColor;
+  final Uint8List? albumArtBytes;
+  final VoidCallback? onTogglePlay;
+  final VoidCallback? onSkipNext;
+  final VoidCallback? onSkipPrevious;
+  final double width;
+  final double height;
 
   const _EssentialFooter({
     required this.title,
@@ -927,174 +1343,218 @@ class _EssentialFooter extends StatefulWidget {
     this.albumName,
     required this.isPlaying,
     required this.accentColor,
+    this.albumArtBytes,
+    this.onTogglePlay,
+    this.onSkipNext,
+    this.onSkipPrevious,
+    required this.width,
+    required this.height,
   });
 
   @override
   State<_EssentialFooter> createState() => _EssentialFooterState();
 }
 
-class _EssentialFooterState extends State<_EssentialFooter>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _playAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _playAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    if (widget.isPlaying) _playAnim.repeat(reverse: true);
-  }
-
-  @override
-  void didUpdateWidget(_EssentialFooter old) {
-    super.didUpdateWidget(old);
-    if (widget.isPlaying != old.isPlaying) {
-      if (widget.isPlaying) {
-        _playAnim.repeat(reverse: true);
-      } else {
-        _playAnim.stop();
-        _playAnim.value = 0.0;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _playAnim.dispose();
-    super.dispose();
-  }
-
+class _EssentialFooterState extends State<_EssentialFooter> {
   @override
   Widget build(BuildContext context) {
+    // 스펙: 크게 리사이즈하면(세로 110 초과) 빈 공간에 정사각형 앨범아트를 끌어와 채움
+    final bool expanded = widget.height > 110;
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(GRadius.mediumCard),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        // 스펙: 글래스 강도 축소 (blur 18 → 6)
+        filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          width: widget.width,
+          height: widget.height,
+          // 스펙: 높이 약 10% 축소 (vertical padding 14 → 12)
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(20),
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(GRadius.mediumCard),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.12),
               width: 0.8,
             ),
           ),
-          child: Row(
-            children: [
-              // 재생 인디케이터 — 3개 바 애니메이션
-              AnimatedBuilder(
-                animation: _playAnim,
-                builder: (_, __) {
-                  return SizedBox(
-                    width: 14,
-                    height: 20,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: List.generate(3, (i) {
-                        final double phase = (i / 2.0);
-                        final double v = widget.isPlaying
-                            ? (0.35 + 0.65 * ((math.sin(
-                                    (_playAnim.value + phase) * math.pi) +
-                                1) /
-                                2))
-                            : 0.20;
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 80),
-                          width: 3,
-                          height: (20 * v).clamp(3.0, 20.0),
-                          decoration: BoxDecoration(
-                            color: widget.isPlaying
-                                ? widget.accentColor.withValues(alpha: 0.85)
-                                : Colors.white.withValues(alpha: 0.22),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        );
-                      }),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 14),
-              // 구분선
-              Container(
-                width: 0.6,
-                height: 32,
-                color: Colors.white.withValues(alpha: 0.12),
-                margin: const EdgeInsets.only(right: 14),
-              ),
-              // 곡 정보
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.4,
-                        height: 1.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            widget.artist,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.50),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 1.2,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (widget.albumName != null &&
-                            widget.albumName!.isNotEmpty) ...[
-                          Container(
-                            width: 3,
-                            height: 3,
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withValues(alpha: 0.22),
-                            ),
-                          ),
-                          Flexible(
-                            child: Text(
-                              widget.albumName!,
-                              style: TextStyle(
-                                color: widget.accentColor.withValues(alpha: 0.55),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 0.4,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+          child: expanded ? _buildExpanded(context) : _buildCompact(context),
+        ),
+      ),
+    );
+  }
+
+  // ── 컴팩트 레이아웃 (기본 크기) — prev/play/next + 곡 정보
+  Widget _buildCompact(BuildContext context) {
+    return Row(
+      children: [
+        _transportButtons(iconSize: 18, playSize: 34),
+        const SizedBox(width: 12),
+        // 구분선
+        Container(
+          width: 0.6,
+          height: 29,
+          color: Colors.white.withValues(alpha: 0.12),
+          margin: const EdgeInsets.only(right: 14),
+        ),
+        Expanded(child: _infoColumn()),
+      ],
+    );
+  }
+
+  // ── 확장 레이아웃 (세로로 크게 리사이즈했을 때) — 정사각형 앨범아트 + 여유로운 구성
+  Widget _buildExpanded(BuildContext context) {
+    final double artSize = (widget.height - 24).clamp(48.0, 240.0);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(GRadius.mediumCard * 0.7),
+          child: widget.albumArtBytes != null
+              ? Image.memory(
+                  widget.albumArtBytes!,
+                  width: artSize,
+                  height: artSize,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                )
+              : Container(
+                  width: artSize,
+                  height: artSize,
+                  color: Colors.white.withValues(alpha: 0.08),
+                  child: Icon(Icons.music_note_rounded,
+                      color: Colors.white.withValues(alpha: 0.3), size: artSize * 0.4),
                 ),
-              ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _infoColumn(titleSize: 18, artistSize: 12),
+              const SizedBox(height: 14),
+              _transportButtons(iconSize: 20, playSize: 40),
             ],
           ),
         ),
-      ),
+      ],
+    );
+  }
+
+  // ── 곡 정보 컬럼 (제목/아티스트/앨범) — 두 레이아웃에서 공용
+  Widget _infoColumn({double titleSize = 16, double artistSize = 11}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          widget.title,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: titleSize,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+            height: 1.2,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                widget.artist,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: artistSize,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.2,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (widget.albumName != null && widget.albumName!.isNotEmpty) ...[
+              Container(
+                width: 3,
+                height: 3,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.22),
+                ),
+              ),
+              Flexible(
+                child: Text(
+                  widget.albumName!,
+                  style: TextStyle(
+                    color: widget.accentColor.withValues(alpha: 0.50),
+                    fontSize: artistSize,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.4,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── prev / play / next 버튼 — 스펙: accent color는 play/progress/선택상태/prev-next에만
+  Widget _transportButtons({required double iconSize, required double playSize}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _AestheticPressScale(
+          onTap: widget.onSkipPrevious,
+          child: Icon(
+            Icons.skip_previous_rounded,
+            color: widget.accentColor.withValues(alpha: 0.80),
+            size: iconSize,
+          ),
+        ),
+        SizedBox(width: iconSize * 0.5),
+        _AestheticPressScale(
+          onTap: widget.onTogglePlay,
+          child: Container(
+            width: playSize,
+            height: playSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.accentColor.withValues(alpha: 0.85),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.accentColor.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  spreadRadius: 0.5,
+                ),
+              ],
+            ),
+            child: Icon(
+              widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              color: Colors.black.withValues(alpha: 0.85),
+              size: playSize * 0.55,
+            ),
+          ),
+        ),
+        SizedBox(width: iconSize * 0.5),
+        _AestheticPressScale(
+          onTap: widget.onSkipNext,
+          child: Icon(
+            Icons.skip_next_rounded,
+            color: widget.accentColor.withValues(alpha: 0.80),
+            size: iconSize,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1116,7 +1576,7 @@ class EssentialToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _AestheticPressScale(
       onTap: () {
         HapticFeedback.lightImpact();
         onToggle();
@@ -1136,6 +1596,16 @@ class EssentialToggleButton extends StatelessWidget {
                 : Colors.white.withValues(alpha: 0.14),
             width: 0.8,
           ),
+          // Fluid AI glow: 활성 상태일 때만 은은하게 빛남
+          boxShadow: isEssentialMode
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                    spreadRadius: 0.5,
+                  ),
+                ]
+              : [],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1589,7 +2059,7 @@ class _SpectrumPainter extends CustomPainter {
         );
       }
 
-      // 저음 대역 외부 글로우
+      // 저음 대역 외부 글로우 (스펙: radius 5dp, opacity 10% 미만 — 네온 아님)
       if (i < 12 && v > 0.45) {
         canvas.drawRRect(
           RRect.fromRectAndRadius(
@@ -1597,9 +2067,9 @@ class _SpectrumPainter extends CustomPainter {
             Radius.circular(rx + 1.5),
           ),
           Paint()
-            ..color = accentColor.withValues(alpha: 0.22 * v)
+            ..color = accentColor.withValues(alpha: (0.09 * v).clamp(0.0, 0.09))
             ..style = PaintingStyle.fill
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0),
         );
       }
 

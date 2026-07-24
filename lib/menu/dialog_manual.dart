@@ -1,6 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../theme/glass_material.dart';
+import '../theme/design_tokens.dart';
 
 void showManualDialog(BuildContext context) {
   showDialog(
@@ -15,18 +16,10 @@ class ManualDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-      child: Dialog(
-        backgroundColor: Colors.white.withValues(alpha: 0.05),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.12), width: 1),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(28.0),
-          child: Column(
+    return GlassPopupShell(
+        maxWidth: 440,
+        padding: const EdgeInsets.all(28.0),
+        child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // --- Header ---
@@ -120,9 +113,7 @@ class ManualDialog extends StatelessWidget {
                 ],
               ),
             ],
-          ),
         ),
-      ),
     );
   }
 

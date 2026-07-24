@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 //import '../menu/menu_main.dart';
 import 'package:flutter/services.dart';
+import 'fluid/fluid_kit.dart';
+import '../theme/design_tokens.dart';
 
 // --- 1. 상단 앱바 위젯 (PlayerTopBar) ---
 class PlayerTopBar extends StatelessWidget {
@@ -199,61 +201,100 @@ class _ProgressBarWidgetState extends State<ProgressBarWidget> {
                   left: _knobR,
                   right: _knobR,
                   child: Container(
-                    height: 6,
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(GRadius.sliderThumb),
                     ),
                   ),
                 ),
 
-                // 2. [진행 바] — 배경 바와 같은 left 기준, fillW까지
+                // 2. [진행 바] — accent color 기반, 살짝 입체감 있는 그라데이션
+                // ("Progress bar should feel slightly dimensional")
                 Positioned(
                   left: _knobR,
                   child: Container(
                     width: (fillW - _knobR).clamp(0.0, trackW - _knobR * 2),
-                    height: 6,
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(10),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color.lerp(widget.barColor, Colors.white, 0.35)!,
+                          widget.barColor,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(GRadius.sliderThumb),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: widget.barColor.withValues(alpha: 0.35),
                           blurRadius: 8,
-                          spreadRadius: 1,
+                          spreadRadius: 0.5,
                         ),
                       ],
                     ),
                   ),
                 ),
 
-                // 3. [노브] — knobLeft가 노브 왼쪽 끝 기준. 항상 트랙 안에 존재
+                // 3. [노브] — 프리미엄 글래스 썸: accent glow + 소프트 그림자 + 미세 스페큘러
                 Positioned(
                   left: knobLeft,
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: GMotion.buttonDuration,
+                    curve: GMotion.buttonCurve,
                     width: _knobR * 2,
                     height: _knobR * 2,
                     decoration: BoxDecoration(
-                      color: Colors.white,
                       shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white,
+                          Colors.white.withValues(alpha: 0.88),
+                        ],
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                          color: Colors.black.withValues(alpha: 0.28),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                        BoxShadow(
+                          // accent glow — 이 트랙이 "이 곡의 것"임을 은은하게 표시
+                          color: widget.barColor.withValues(alpha: _isSeeking ? 0.55 : 0.32),
+                          blurRadius: _isSeeking ? 14 : 8,
+                          spreadRadius: _isSeeking ? 1.5 : 0.5,
                         ),
                       ],
                     ),
-                    child: Center(
-                      child: Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+                    child: Stack(
+                      children: [
+                        // 미세 스페큘러: 좌상단에 아주 옅은 반사광 점
+                        Positioned(
+                          top: 2,
+                          left: 2.5,
+                          child: Container(
+                            width: 4,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
                         ),
-                      ),
+                        Center(
+                          child: Container(
+                            width: 4,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: widget.barColor.withValues(alpha: 0.35),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -302,7 +343,8 @@ class PlayButtonsWidget extends StatelessWidget {
     required VoidCallback onTap,
     double size = 55,
   }) {
-    return GestureDetector(
+    // Fluid AI 마이크로 인터랙션: 딱딱한 탭 대신 scale-down/up
+    return FluidTapFade(
       onTap: onTap,
       child: Container(
         width: size,
@@ -331,10 +373,13 @@ class PlayButtonsWidget extends StatelessWidget {
     required VoidCallback onTap,
     double size = 80,
   }) {
-    return GestureDetector(
+    // Fluid AI 톤: 재생 중일 때만 glow가 "살아있고", 정지 시엔 사라짐 —
+    // 상태 변화를 색과 빛의 강도로 표현.
+    return FluidTapFade(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+        duration: GMotion.cardDuration,
+        curve: GMotion.cardCurve,
         width: size,
         height: size,
         decoration: BoxDecoration(
@@ -343,7 +388,9 @@ class PlayButtonsWidget extends StatelessWidget {
               ? Colors.white.withValues(alpha: 0.25)
               : Colors.white.withValues(alpha: 0.15),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.3),
+            color: isPlaying
+                ? activeColor.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.3),
             width: 2,
           ),
           boxShadow: [
@@ -352,19 +399,33 @@ class PlayButtonsWidget extends StatelessWidget {
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
-            if (isPlaying)
+            if (isPlaying) ...[
               BoxShadow(
-                color: activeColor.withValues(alpha: 0.3),
-                blurRadius: 25,
+                color: activeColor.withValues(alpha: 0.35),
+                blurRadius: 26,
                 spreadRadius: 2,
               ),
+              BoxShadow(
+                color: activeColor.withValues(alpha: 0.15),
+                blurRadius: 44,
+                spreadRadius: 6,
+              ),
+            ],
           ],
         ),
         child: Center(
-          child: Icon(
-            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            size: size * 0.52,
-            color: isPlaying ? activeColor : Colors.white,
+          child: AnimatedSwitcher(
+            duration: GMotion.buttonDuration,
+            transitionBuilder: (child, anim) => ScaleTransition(
+              scale: anim,
+              child: FadeTransition(opacity: anim, child: child),
+            ),
+            child: Icon(
+              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              key: ValueKey(isPlaying),
+              size: size * 0.52,
+              color: isPlaying ? activeColor : Colors.white,
+            ),
           ),
         ),
       ),

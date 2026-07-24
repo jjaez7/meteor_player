@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../menu/menu_main.dart';
 import '../features/left_menu_actions.dart';
 import 'essential_view.dart'; // 🎧 에센셜 모드 토글 버튼
+import 'fluid/fluid_kit.dart';
 
 class PlayerAppBar extends StatelessWidget {
   final bool isPip;
@@ -120,30 +121,42 @@ class PlayerAppBar extends StatelessWidget {
             ),
           ),
 
-          // [중앙] 로고 - AESTHETIC �a�드일 때 숨김
-          if (!isEssentialMode)
-            Positioned(
-              left: 60,
-              right: 130,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Text(
-                  "GLASNYL",
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
-                    fontSize: 13,
-                    color: textColor.withValues(alpha: 0.9),
-                    shadows: [
-                      Shadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 2)),
-                    ],
+          // [중앙] 로고 - Essential 모드일 때 숨김
+          // Fluid AI 톤: 딱 사라지지 않고 fade+살짝 scale로 사라짐/등장
+          Positioned(
+            left: 60,
+            right: 130,
+            top: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
+                opacity: isEssentialMode ? 0.0 : 1.0,
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  scale: isEssentialMode ? 0.92 : 1.0,
+                  child: Center(
+                    child: Text(
+                      "GLASNYL",
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                        fontSize: 13,
+                        color: textColor.withValues(alpha: 0.9),
+                        shadows: [
+                          Shadow(color: Colors.black26, blurRadius: 8, offset: const Offset(0, 2)),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
+          ),
 
           // [우측] 에센셜 토글 & 리셋 & 설정 메뉴
           Align(

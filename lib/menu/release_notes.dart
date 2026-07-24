@@ -31,6 +31,17 @@ class ReleaseNoteItem {
 // ★ 여기에 버전 올릴 때마다 맨 위에 추가하세요
 const List<ReleaseNote> kReleaseNotes = [
   ReleaseNote(
+    version: "1.0.3",
+    date: "2026-07-25",
+    items: [
+      ReleaseNoteItem(NoteType.improvement, "AESHETIC Mode CHanged"),
+      ReleaseNoteItem(NoteType.feature, "You can change the title and make the title invisible"),
+      ReleaseNoteItem(NoteType.improvement, "The main design has been modified"),
+      ReleaseNoteItem(NoteType.fix, "Few Bug fixed"),
+    ],
+    
+  ),
+  ReleaseNote(
     version: "1.0.2",
     date: "2026-05-14",
     items: [

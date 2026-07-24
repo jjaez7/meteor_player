@@ -20,6 +20,9 @@ import 'widgets/player_text_info.dart';
 import 'logic/music_controller.dart';
 import 'logic/player_logic.dart';
 import 'widgets/classic_vinyl_view.dart';
+import 'widgets/fluid/fluid_kit.dart';
+import 'theme/design_tokens.dart';
+import 'theme/glass_material.dart';
 import 'widgets/stream_progress_bar.dart';
 import 'widgets/vinyl_turntable_view.dart';
 import 'features/screen_lock.dart';
@@ -422,7 +425,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   vertical: 14,
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(GRadius.button),
                 ),
               ),
               icon: const Icon(Icons.ios_share_rounded),
@@ -956,6 +959,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               ),
                             ),
                           ),
+                          // Fluid AI 앰비언트: 곡의 accentColor로 아주 천천히
+                          // 숨쉬듯 밝아졌다 어두워지는 glow — 정적인 배경에 생동감
+                          FluidBreathingGlow(color: _barColor),
                         ],
                       ),
                     ),
@@ -1007,6 +1013,27 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                         positionNotifier: _positionNotifier,
                         isLyricsLoading: _currentStatus == LyricStatus.loading,
                         onLyricsActivated: _syncLyricsPosition, // LRC 토글 = 시계 3탭
+                        onTogglePlay: () {
+                          PlayerLogic.togglePlay(
+                            isPlaying: _isPlaying,
+                            onToggle: () {
+                              if (mounted) {
+                                setState(() {
+                                  _isPlaying = !_isPlaying;
+                                  if (_isPlaying) {
+                                    _lpController.repeat();
+                                    _needleController.forward();
+                                  } else {
+                                    _lpController.stop();
+                                    _needleController.reverse();
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        },
+                        onSkipNext: PlayerLogic.skipNext,
+                        onSkipPrevious: PlayerLogic.skipPrevious,
                       ),
                     ),
                   ),
@@ -1134,7 +1161,23 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 children: [
                   GestureDetector(
                     onLongPress: _handleManualRefresh,
-                    child: ValueListenableBuilder<Duration>(
+                    child: AnimatedSwitcher(
+                      // Fluid AI 모드 전환: 미니↔풀 모드가 딱 끊기지 않고
+                      // scale+fade로 이어지도록 모핑
+                      duration: const Duration(milliseconds: 420),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder: (child, anim) {
+                        final scale = Tween<double>(begin: 0.96, end: 1.0)
+                            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                        return FadeTransition(
+                          opacity: anim,
+                          child: ScaleTransition(scale: scale, child: child),
+                        );
+                      },
+                      child: KeyedSubtree(
+                        key: ValueKey('mode_${_isMinimalMode || _showLyrics}'),
+                        child: ValueListenableBuilder<Duration>(
                       valueListenable: _positionNotifier,
                       builder: (context, realTimePos, _) {
                         if (_isMinimalMode || _showLyrics) {
@@ -1200,10 +1243,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             duration: const Duration(milliseconds: 500),
                             switchInCurve: Curves.easeOut,
                             switchOutCurve: Curves.easeIn,
-                            transitionBuilder: (child, anim) => FadeTransition(
-                              opacity: anim,
-                              child: child,
-                            ),
+                            transitionBuilder: (child, anim) {
+                              // Fluid AI 톤: 딱딱한 fade 대신 scale-up + fade 모핑
+                              final scale = Tween<double>(begin: 0.97, end: 1.0)
+                                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                              return FadeTransition(
+                                opacity: anim,
+                                child: ScaleTransition(scale: scale, child: child),
+                              );
+                            },
                             child: VinylTurntableView(
                               key: ValueKey('landscape_${_currentTitle}_${_albumArtBytes?.length}'),
                               lpController: _lpController,
@@ -1242,6 +1290,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                           ),
                         );
                       },
+                        ),
+                      ),
                     ),
                   ),
 
@@ -1356,7 +1406,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double timeFontSize = (w * 0.14).clamp(16.0, 28.0);
     final double iconSize = timeFontSize * 0.8;
 
-    return RepaintBoundary(
+    return FluidPressFeel(
+      child: RepaintBoundary(
       child: GestureDetector(
         onTap: _handleClockTap,
         child: StreamBuilder<DateTime>(
@@ -1371,90 +1422,58 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 '${now.hour.toString().padLeft(2, '0')}:'
                 '${now.minute.toString().padLeft(2, '0')}';
 
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  width: w,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: Colors.white.withValues(alpha: 0.07),
-                    border: Border.all(
-                      color: _landscapeShowLyrics
-                          ? _barColor.withValues(alpha: 0.45)
-                          : Colors.white.withValues(alpha: 0.18),
-                      width: _landscapeShowLyrics ? 1.4 : 1.0,
+            return GlassMaterial(
+              borderRadius: GRadius.mediumCard,
+              elevation: GElevation.card,
+              width: w,
+              borderColorOverride: _landscapeShowLyrics
+                  ? _barColor.withValues(alpha: 0.45)
+                  : Colors.white.withValues(alpha: 0.14),
+              borderWidth: _landscapeShowLyrics ? 1.4 : 1.0,
+              padding: EdgeInsets.symmetric(
+                horizontal: hPadInner,
+                vertical: 10,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(
+                    _landscapeShowLyrics
+                        ? Icons.lyrics_rounded
+                        : Icons.access_time_rounded,
+                    color: _barColor,
+                    size: iconSize,
+                  ),
+                  Text(
+                    timeText,
+                    style: TextStyle(
+                      color: _textColor.withValues(alpha: 0.90),
+                      fontSize: timeFontSize,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2.0,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
                   ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: hPadInner,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Icon(
-                        _landscapeShowLyrics
-                            ? Icons.lyrics_rounded
-                            : Icons.access_time_rounded,
-                        color: _barColor,
-                        size: iconSize,
-                      ),
-                      Text(
-                        timeText,
-                        style: TextStyle(
-                          color: _textColor.withValues(alpha: 0.90),
-                          fontSize: timeFontSize,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
               ),
             );
           },
         ),
       ),
+    ),
     );
   }
 
   Widget _buildLandscapeLyricsPanel(double w, double h) {
     final double radius = 20.0;
 
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            width: w,
-            height: h.clamp(1.0, double.infinity),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(radius),
-              color: Colors.white.withValues(alpha: 0.07),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: ValueListenableBuilder<Duration>(
+    return FluidPressFeel(
+      child: RepaintBoundary(
+      child: GlassMaterial(
+        borderRadius: radius,
+        elevation: GElevation.card,
+        width: w,
+        height: h.clamp(1.0, double.infinity),
+        child: ValueListenableBuilder<Duration>(
               valueListenable: _positionNotifier,
               builder: (context, currentPos, _) {
                 return _LandscapeLyricsScroller(
@@ -1468,10 +1487,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                   textColor: _textColor,
                 );
               },
-            ),
-          ),
         ),
       ),
+    ),
     );
   }
 
@@ -1490,30 +1508,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double vPad = ((safeH - sliderH) / 2).clamp(0.0, 12.0);
     final bool showLabel = vPad * 2 + contentWithLabel <= safeH;
 
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            width: w,
-            height: safeH,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: Colors.white.withValues(alpha: 0.07),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: ValueListenableBuilder<double>(
+    return FluidPressFeel(
+      child: RepaintBoundary(
+      child: GlassMaterial(
+        borderRadius: GRadius.mediumCard,
+        elevation: GElevation.medium,
+        width: w,
+        height: safeH,
+        child: ValueListenableBuilder<double>(
               valueListenable: _volumeNotifier,
               builder: (context, volume, _) => ClipRect(
                 child: Padding(
@@ -1568,9 +1570,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 ),
               ),
             ),
-          ),
         ),
-      ),
+    ),
     );
   }
 
@@ -1594,30 +1595,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
   }
 
   Widget _buildPortraitLyricsPanel(double w, double h) {
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            width: w,
-            height: h.clamp(1.0, double.infinity),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: Colors.white.withValues(alpha: 0.07),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: ValueListenableBuilder<Duration>(
+    return FluidPressFeel(
+      child: RepaintBoundary(
+      child: GlassMaterial(
+        borderRadius: GRadius.largeCard,
+        elevation: GElevation.card,
+        width: w,
+        height: h.clamp(1.0, double.infinity),
+        child: ValueListenableBuilder<Duration>(
               valueListenable: _positionNotifier,
               builder: (context, currentPos, _) => _LandscapeLyricsScroller(
                 key: ValueKey('portrait_lyrics_$_currentTitle'),
@@ -1629,10 +1614,9 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 barColor: _barColor,
                 textColor: _textColor,
               ),
-            ),
-          ),
         ),
-      ),
+    ),
+    ),
     );
   }
 
@@ -1641,7 +1625,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double timeFontSize = (w * 0.065).clamp(16.0, 26.0);
     final double iconSize = timeFontSize * 0.8;
 
-    return RepaintBoundary(
+    return FluidPressFeel(
+      child: RepaintBoundary(
       child: GestureDetector(
         onTap: _handlePortraitClockTap,
         child: StreamBuilder<DateTime>(
@@ -1655,60 +1640,44 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
             final String timeText =
                 '${now.hour.toString().padLeft(2, '0')}:'
                 '${now.minute.toString().padLeft(2, '0')}';
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  width: w,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: Colors.white.withValues(alpha: 0.07),
-                    border: Border.all(
-                      color: _portraitShowLyrics
-                          ? _barColor.withValues(alpha: 0.45)
-                          : Colors.white.withValues(alpha: 0.18),
-                      width: _portraitShowLyrics ? 1.4 : 1.0,
+            return GlassMaterial(
+              borderRadius: 16,
+              elevation: GElevation.soft,
+              width: w,
+              borderColorOverride: _portraitShowLyrics
+                  ? _barColor.withValues(alpha: 0.45)
+                  : Colors.white.withValues(alpha: 0.14),
+              borderWidth: _portraitShowLyrics ? 1.4 : 1.0,
+              padding: EdgeInsets.symmetric(
+                horizontal: hPadInner,
+                vertical: 8,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Icon(
+                    _portraitShowLyrics
+                        ? Icons.lyrics_rounded
+                        : Icons.access_time_rounded,
+                    color: _barColor,
+                    size: iconSize,
+                  ),
+                  Text(
+                    timeText,
+                    style: TextStyle(
+                      color: _textColor.withValues(alpha: 0.90),
+                      fontSize: timeFontSize,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2.0,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: hPadInner,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Icon(
-                        _portraitShowLyrics
-                            ? Icons.lyrics_rounded
-                            : Icons.access_time_rounded,
-                        color: _barColor,
-                        size: iconSize,
-                      ),
-                      Text(
-                        timeText,
-                        style: TextStyle(
-                          color: _textColor.withValues(alpha: 0.90),
-                          fontSize: timeFontSize,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
               ),
             );
           },
         ),
       ),
+    ),
     );
   }
 
@@ -1762,7 +1731,23 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 : Center(
                     child: GestureDetector(
                       onLongPress: _handleManualRefresh,
-                      child: ValueListenableBuilder<Duration>(
+                      child: AnimatedSwitcher(
+                        // Fluid AI 모드 전환: 미니↔풀 모드가 딱 끊기지 않고
+                        // scale+fade로 이어지도록 모핑
+                        duration: const Duration(milliseconds: 420),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: (child, anim) {
+                          final scale = Tween<double>(begin: 0.96, end: 1.0)
+                              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                          return FadeTransition(
+                            opacity: anim,
+                            child: ScaleTransition(scale: scale, child: child),
+                          );
+                        },
+                        child: KeyedSubtree(
+                          key: ValueKey('mode2_${_isMinimalMode || _showLyrics}'),
+                          child: ValueListenableBuilder<Duration>(
                         valueListenable: _positionNotifier,
                         builder: (context, realTimePos, _) {
                           if (_isMinimalMode || _showLyrics) {
@@ -1829,10 +1814,15 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                               duration: const Duration(milliseconds: 500),
                               switchInCurve: Curves.easeOut,
                               switchOutCurve: Curves.easeIn,
-                              transitionBuilder: (child, anim) => FadeTransition(
-                                opacity: anim,
-                                child: child,
-                              ),
+                              transitionBuilder: (child, anim) {
+                                // Fluid AI 톤: 딱딱한 fade 대신 scale-up + fade 모핑
+                                final scale = Tween<double>(begin: 0.97, end: 1.0)
+                                    .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
+                                return FadeTransition(
+                                  opacity: anim,
+                                  child: ScaleTransition(scale: scale, child: child),
+                                );
+                              },
                               child: VinylTurntableView(
                                 key: ValueKey('${_currentTitle}_${_albumArtBytes?.length}'),
                                 lpController: _lpController,
@@ -1871,6 +1861,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                             ),
                           );
                         },
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1943,29 +1935,14 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     final double sideBtnSz = (safeH * 0.13).clamp(36.0, 54.0);
     final double mainBtnSz = (safeH * 0.20).clamp(50.0, 78.0);
 
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            height: safeH,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              color: Colors.white.withValues(alpha: 0.09),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.20),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.20),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
+    return FluidPressFeel(
+      child: RepaintBoundary(
+      child: GlassMaterial(
+        borderRadius: GRadius.largeCard,
+        elevation: GElevation.floating,
+        height: safeH,
+        tintOpacity: 0.09,
+        child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: sidePad,
                 vertical: vPad,
@@ -2134,9 +2111,8 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
                 ],
               ),
             ),
-          ),
         ),
-      ),
+    ),
     );
   }
 
@@ -2145,7 +2121,7 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     required double size,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return FluidTapFade(
       onTap: onTap,
       child: SizedBox(
         width: size,
@@ -2167,11 +2143,11 @@ class _VinylPlayerScreenState extends State<VinylPlayerScreen>
     required Color activeColor,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return FluidTapFade(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+        duration: GMotion.cardDuration,
+        curve: GMotion.cardCurve,
         width: size,
         height: size,
         decoration: BoxDecoration(
@@ -3351,23 +3327,49 @@ class _LandscapeLyricsScrollerState extends State<_LandscapeLyricsScroller>
         itemExtent: _itemExtent,
         itemBuilder: (context, index) {
           final isCurrent = index == _lastIndex;
+          // Fluid AI 레이어링: 현재 라인에서 멀어질수록 흐려지고 작아짐
+          // (완전히 분리된 상태가 아니라 연속적으로 이어지는 느낌)
+          final int distance = (index - _lastIndex).abs();
+          final double proximityFade = isCurrent
+              ? 1.0
+              : (0.28 - (distance - 1).clamp(0, 4) * 0.03).clamp(0.10, 0.28);
+          final double scale = isCurrent
+              ? 1.0
+              : (0.94 - (distance - 1).clamp(0, 3) * 0.01).clamp(0.90, 0.94);
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                color: isCurrent
-                    ? Colors.white.withValues(alpha: 1.0)
-                    : Colors.white.withValues(alpha: 0.28),
-                fontSize: isCurrent ? _currentSize : _baseSize,
-                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-                height: 1.3,
-              ),
-              child: Text(
-                widget.lyrics[index].text ?? '',
-                textAlign: TextAlign.center,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOutCubic,
+              scale: scale,
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: proximityFade),
+                  fontSize: isCurrent ? _currentSize : _baseSize,
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                  height: 1.3,
+                  shadows: isCurrent
+                      ? [
+                          Shadow(
+                            color: widget.barColor.withValues(alpha: 0.55),
+                            blurRadius: 18,
+                          ),
+                          Shadow(
+                            color: widget.barColor.withValues(alpha: 0.25),
+                            blurRadius: 34,
+                          ),
+                        ]
+                      : const [],
+                ),
+                child: Text(
+                  widget.lyrics[index].text ?? '',
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           );
@@ -3427,16 +3429,24 @@ class _GlassVolumeSliderState extends State<_GlassVolumeSlider> {
           child: SizedBox(
             width: trackW,
             height: totalH,
-            child: CustomPaint(
-              painter: _GlassTrackPainter(
-                value: widget.value,
-                trackHeight: th,
-                thumbRadius: tr,
-                activeColor: widget.activeColor,
-                thumbColor: widget.thumbColor,
-                bgColor: widget.bgColor,
-                dragging: _dragging,
-              ),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              tween: Tween<double>(begin: 0, end: _dragging ? 1 : 0),
+              builder: (context, focusT, _) {
+                return CustomPaint(
+                  painter: _GlassTrackPainter(
+                    value: widget.value,
+                    trackHeight: th,
+                    thumbRadius: tr,
+                    activeColor: widget.activeColor,
+                    thumbColor: widget.thumbColor,
+                    bgColor: widget.bgColor,
+                    dragging: _dragging,
+                    focusT: focusT,
+                  ),
+                );
+              },
             ),
           ),
         );
@@ -3458,6 +3468,7 @@ class _GlassTrackPainter extends CustomPainter {
   final Color thumbColor;
   final Color bgColor;
   final bool dragging;
+  final double focusT; // 0.0(정지) ~ 1.0(드래그 중) — glow 강도를 부드럽게 보간
 
   _GlassTrackPainter({
     required this.value,
@@ -3467,6 +3478,7 @@ class _GlassTrackPainter extends CustomPainter {
     required this.thumbColor,
     required this.bgColor,
     required this.dragging,
+    this.focusT = 0.0,
   });
 
   @override
@@ -3519,11 +3531,20 @@ class _GlassTrackPainter extends CustomPainter {
       canvas.drawRRect(activeRRect, activePaint);
     }
 
-    final double glowR = dragging ? tr * 2.0 : tr * 1.5;
-    final Paint glowPaint = Paint()
-      ..color = activeColor.withValues(alpha: dragging ? 0.28 : 0.12)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(fillX, cy), glowR, glowPaint);
+    // Fluid AI glow: 하드엣지 원 대신 blur mask로 은은하게 번지는 빛,
+    // focusT로 드래그 시작/종료 시 강도가 부드럽게 보간됨
+    final double glowR = tr * (1.6 + 0.6 * focusT);
+    final Paint glowOuter = Paint()
+      ..color = activeColor.withValues(alpha: 0.10 + 0.12 * focusT)
+      ..style = PaintingStyle.fill
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, glowR * 0.55);
+    canvas.drawCircle(Offset(fillX, cy), glowR, glowOuter);
+
+    final Paint glowInner = Paint()
+      ..color = activeColor.withValues(alpha: 0.14 + 0.16 * focusT)
+      ..style = PaintingStyle.fill
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, tr * 0.4);
+    canvas.drawCircle(Offset(fillX, cy), tr * (1.05 + 0.25 * focusT), glowInner);
 
     final Paint thumbBodyPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.85)
@@ -3545,7 +3566,7 @@ class _GlassTrackPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GlassTrackPainter old) =>
-      old.value != value || old.dragging != dragging;
+      old.value != value || old.dragging != dragging || old.focusT != focusT;
 }
 // ──────────────────────────────────────────────────────────────────────────────
 // _VisualizerPermissionDialog  —  Essential 모드 진입 시 권한 설명 다이얼로그
@@ -3556,24 +3577,11 @@ class _VisualizerPermissionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-                width: 0.8,
-              ),
-            ),
-            child: Column(
+    return GlassPopupShell(
+      accentColor: accentColor,
+      maxWidth: 380,
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+      child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 아이콘
@@ -3677,9 +3685,6 @@ class _VisualizerPermissionDialog extends StatelessWidget {
                   onTap: () => Navigator.pop(context, false),
                 ),
               ],
-            ),
-          ),
-        ),
       ),
     );
   }

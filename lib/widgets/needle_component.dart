@@ -76,9 +76,9 @@ class NeedleWidget extends AnimatedWidget {
                 offset: const Offset(2, 2),
                 blurRadius: 4,
               ),
-              const BoxShadow(
-                color: Colors.white,
-                offset: Offset(-2, -2),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.55),
+                offset: const Offset(-2, -2),
                 blurRadius: 4,
               ),
             ],

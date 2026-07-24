@@ -1,6 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import '../theme/glass_material.dart';
+import '../theme/design_tokens.dart';
 
 void showSettingsDialog({
   required BuildContext context,
@@ -17,23 +18,15 @@ void showSettingsDialog({
     context: context,
     barrierDismissible: true,
     barrierLabel: '',
-    transitionDuration: const Duration(milliseconds: 300),
-    pageBuilder: (context, anim1, anim2) => Container(),
-    transitionBuilder: (context, anim1, anim2, child) {
-      return Transform.scale(
-        scale: Curves.easeOutBack.transform(anim1.value),
-        child: Opacity(
-          opacity: anim1.value,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: AlertDialog(
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
-              ),
-              title: const Text(
+    // Popup motion 토큰: 오버슈트/바운스 없이 scale+fade로 차분하게
+    transitionDuration: GMotion.popupDuration,
+    pageBuilder: (context, anim1, anim2) => GlassPopupShell(
+      accentColor: playBtnColor,
+      maxWidth: 420,
+      child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
                 "THEME SETTINGS",
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -43,18 +36,13 @@ void showSettingsDialog({
                   letterSpacing: 2.0,
                 ),
               ),
-              content: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.9,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 10),
+                const SizedBox(height: 20),
                     // [소프트 레이어] 컬러 칩들이 담긴 반투명 박스
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(GRadius.largeCard),
                         border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
                       ),
                       child: Wrap(
@@ -91,13 +79,11 @@ void showSettingsDialog({
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+              ],
+      ),
+    ),
+    transitionBuilder: (context, anim1, anim2, child) {
+      return FadeTransition(opacity: anim1, child: child);
     },
   );
 }
@@ -117,23 +103,26 @@ Widget _glassColorCircle(
           // 컬러 피커도 글래스모피즘 스타일로 띄움
           showDialog(
             context: context,
-            builder: (context) => BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: AlertDialog(
-                backgroundColor: Colors.black.withValues(alpha: 0.8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                title: Text("PICK $label COLOR", 
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                content: SingleChildScrollView(
-                  child: ColorPicker(
-                    pickerColor: color,
-                    onColorChanged: onSelect,
-                    pickerAreaHeightPercent: 0.7,
-                    enableAlpha: false,
-                    displayThumbColor: true,
+            builder: (context) => GlassPopupShell(
+              accentColor: color,
+              maxWidth: 340,
+              padding: const EdgeInsets.all(GSpace.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("PICK $label COLOR",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: GSpace.md),
+                  SingleChildScrollView(
+                    child: ColorPicker(
+                      pickerColor: color,
+                      onColorChanged: onSelect,
+                      pickerAreaHeightPercent: 0.7,
+                      enableAlpha: false,
+                      displayThumbColor: true,
+                    ),
                   ),
-                ),
-                actions: [
+                  const SizedBox(height: GSpace.md),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text("DONE", style: TextStyle(color: Colors.white)),
@@ -182,7 +171,7 @@ Widget _glassActionButton(String label, Color color, VoidCallback onTap) {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(GRadius.mediumCard),
         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
           if (label == "RESET")

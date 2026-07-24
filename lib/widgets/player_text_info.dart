@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:marquee/marquee.dart';
+import '../theme/design_tokens.dart';
 
 // [제목 위젯]
 // 짧으면 고정, 길어서 화면 밖으로 나가면 전광판 모드
@@ -24,20 +25,9 @@ class MarqueeTitleWidget extends StatelessWidget {
     final size = MediaQuery.of(context).size;
     final bool isFlipCover = size.width > size.height && size.width < 600;
 
-    // 공통 스타일 정의
-    final TextStyle textStyle = TextStyle(
-      fontSize: fontSize,
-      fontWeight: FontWeight.w900,
-      color: Colors.white,
-      letterSpacing: -0.5,
-      shadows: [
-        Shadow(
-          color: Colors.black.withValues(alpha: 0.5),
-          offset: const Offset(0, 4),
-          blurRadius: 20,
-        ),
-      ],
-    );
+    // 공통 스타일 정의 — 디자인 시스템의 title 토큰 사용 (일관된 계층/그림자)
+    // 주의: 기존처럼 항상 흰색 유지 (textColor 값을 실제로 쓰면 동작이 바뀌므로 그대로 보존)
+    final TextStyle textStyle = GType.title(fontSize: fontSize);
 
     if (isPip) {
       return Text(
@@ -124,19 +114,13 @@ class ArtistTextWidget extends StatelessWidget {
             textAlign: TextAlign.left,
             maxLines: isFlipCover ? 1 : 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
+            // 주의: 기존처럼 흰색 유지 (color 파라미터를 실제로 적용하면
+            // 동작이 바뀌므로, 토큰의 그림자/굵기만 가져오고 색상은 보존)
+            style: GType.artist(
               fontSize: isFlipCover ? fontSize * 0.9 : fontSize,
-              color: Colors.white.withValues(alpha: 0.6),
-              fontWeight: FontWeight.w600,
+            ).copyWith(
               letterSpacing: isFlipCover ? 1.0 : 2.0,
               fontFamily: 'sans-serif-medium',
-              shadows: [
-                Shadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  offset: const Offset(0, 2),
-                  blurRadius: 10,
-                ),
-              ],
             ),
           ),
         );

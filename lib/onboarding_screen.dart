@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
+import 'theme/design_tokens.dart';
 
 // ── 페이지 데이터 ──────────────────────────────────────────────
 class _PageData {
@@ -94,9 +95,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
     _fadeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: GMotion.cardDuration,
     );
-    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: GMotion.cardCurve);
     _fadeCtrl.forward();
   }
 
@@ -255,7 +256,7 @@ class _OnboardingPage extends StatelessWidget {
               height: 72,
               decoration: BoxDecoration(
                 color: data.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(GRadius.mediumCard),
                 border: Border.all(
                   color: data.accent.withValues(alpha: 0.25),
                   width: 1,

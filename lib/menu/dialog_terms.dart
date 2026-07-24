@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../main.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/design_tokens.dart';
 
 void showTermsDialog(BuildContext context) {
   final size = MediaQuery.of(context).size;
@@ -12,12 +13,12 @@ void showTermsDialog(BuildContext context) {
     context: context,
     barrierDismissible: false, // 출시용: 동의 전까지 닫기 방지
     builder: (context) => BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
       child: AlertDialog(
         backgroundColor: Colors.white.withValues(alpha: 0.1),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
+          borderRadius: BorderRadius.circular(GRadius.popup),
           side: BorderSide(
             color: Colors.white.withValues(alpha: 0.2),
             width: 1.5,
@@ -205,7 +206,7 @@ Widget _buildTermsScrollArea(Size size, bool isLandscape) {
       decoration: BoxDecoration(
         // [소프트 레이어] 가독성을 위해 배경을 조금 더 어둡게 누름
         color: Colors.black.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(GRadius.largeCard),
         border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
       child: const SingleChildScrollView(
@@ -320,7 +321,7 @@ Widget _buildAgreeButton(BuildContext context, Color accent) {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(GRadius.mediumCard),
         border: Border.all(color: accent.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(

@@ -212,12 +212,14 @@ class ClassicVinylView extends StatelessWidget {
 class _LyricItem extends StatefulWidget {
   final String text;
   final bool isCurrent;
+  final int distance;
   final double baseSize;
   final double currentSize;
 
   const _LyricItem({
     required this.text,
     required this.isCurrent,
+    this.distance = 1,
     required this.baseSize,
     required this.currentSize,
   });
@@ -272,26 +274,34 @@ class _LyricItemState extends State<_LyricItem>
       ),
       builder: (context, child) {
         final t = _anim.value;
+        // Fluid AI 레이어링: 현재 라인에서 멀어질수록 연속적으로 흐려짐
+        // (이전엔 현재/비현재 딱 두 단계였음)
+        final double farAlpha =
+            (0.28 - (widget.distance - 1).clamp(0, 4) * 0.03).clamp(0.10, 0.28);
+        final scale = lerpDouble(0.97, 1.0, t)!;
         return Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: DefaultTextStyle(
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: lerpDouble(0.20, 1.0, t)!),
-                fontSize: lerpDouble(widget.baseSize, widget.currentSize, t)!,
-                fontWeight: t > 0.5 ? FontWeight.bold : FontWeight.normal,
-                height: 1.3,
-                letterSpacing: -0.5,
-                shadows: t > 0.5
-                    ? [
-                        Shadow(
-                          color: Colors.white.withValues(alpha: 0.25 * t),
-                          blurRadius: 18,
-                        ),
-                      ]
-                    : null,
+            child: Transform.scale(
+              scale: scale,
+              child: DefaultTextStyle(
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: lerpDouble(farAlpha, 1.0, t)!),
+                  fontSize: lerpDouble(widget.baseSize, widget.currentSize, t)!,
+                  fontWeight: t > 0.5 ? FontWeight.bold : FontWeight.normal,
+                  height: 1.3,
+                  letterSpacing: -0.5,
+                  shadows: t > 0.5
+                      ? [
+                          Shadow(
+                            color: Colors.white.withValues(alpha: 0.25 * t),
+                            blurRadius: 18,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: child!,
               ),
-              child: child!,
             ),
           ),
         );
@@ -680,6 +690,7 @@ Widget build(BuildContext context) {
                           itemBuilder: (context, index) => _LyricItem(
                             text: widget.lyrics[index].text ?? '',
                             isCurrent: index == currentIndex,
+                            distance: (index - currentIndex).abs(),
                             baseSize: _baseSize,
                             currentSize: _currentSize,
                           ),

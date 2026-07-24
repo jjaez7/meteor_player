@@ -249,6 +249,7 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
                 albumArtBytes: widget.albumArtBytes,
                 title: widget.title,
                 artist: widget.artist,
+                accentColor: widget.accentColor,
               ),
             ),
             ), // RepaintBoundary (LP 디스크)
@@ -400,6 +401,13 @@ class _VinylTurntableViewState extends State<VinylTurntableView>
         ],
         border: Border.all(
             color: Colors.white.withValues(alpha: 0.08), width: 1),
+      ),
+      foregroundDecoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: widget.accentColor.withValues(alpha: 0.08),
+          width: 1,
+        ),
       ),
       child: Stack(
         alignment: Alignment.center,

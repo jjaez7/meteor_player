@@ -1,7 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/glass_material.dart';
+import '../theme/design_tokens.dart';
 
 // ─────────────────────────────────────
 // 설정값
@@ -92,20 +93,11 @@ class _ReviewDialogState extends State<_ReviewDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-      child: AlertDialog(
-        backgroundColor: Colors.white.withValues(alpha: 0.1),
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: BorderSide(
-            color: Colors.white.withValues(alpha: 0.2),
-            width: 1.5,
-          ),
-        ),
-        contentPadding: const EdgeInsets.all(28),
-        content: Column(
+    return GlassPopupShell(
+        accentColor: _accentColor,
+        maxWidth: 380,
+        padding: const EdgeInsets.all(28),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // 아이콘
@@ -265,7 +257,6 @@ class _ReviewDialogState extends State<_ReviewDialog> {
             ),
           ],
         ),
-      ),
     );
   }
 }

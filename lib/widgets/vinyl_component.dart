@@ -9,6 +9,7 @@ class VinylDisk extends StatelessWidget {
   final Uint8List? albumArtBytes;
   final String title;
   final String artist;
+  final Color accentColor;
 
   const VinylDisk({
     super.key,
@@ -17,6 +18,7 @@ class VinylDisk extends StatelessWidget {
     this.albumArtBytes,
     this.title = "",
     this.artist = "",
+    this.accentColor = const Color(0xFFB1A1D0),
   });
 
   @override
@@ -125,22 +127,68 @@ class VinylDisk extends StatelessWidget {
             ),
           ),
 
-          // 2. 고정 반사광 (회전 연산 제외 - 성능 이점)
+          // 2. 고정 반사광 + 림 라이팅 + 디스크 하이라이트 (전부 정적 레이어 —
+          // 회전 애니메이션과 분리되어 있어 60fps 리빌드에 추가 비용 없음)
           IgnorePointer(
             child: Container(
               width: size,
               height: size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
+                // 소프트 스페큘러 하이라이트: 두 개의 뭉툭한 피크 대신
+                // 하나의 부드러운 하이라이트로 정리 ("never exaggerate")
                 gradient: SweepGradient(
+                  startAngle: 0,
+                  endAngle: 2 * math.pi,
                   colors: [
                     Colors.transparent,
-                    Colors.white.withValues(alpha: 0.05),
                     Colors.transparent,
-                    Colors.white.withValues(alpha: 0.1),
+                    Colors.white.withValues(alpha: 0.07),
+                    Colors.transparent,
                     Colors.transparent,
                   ],
-                  stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+                  stops: const [0.0, 0.62, 0.72, 0.82, 1.0],
+                ),
+              ),
+            ),
+          ),
+          // 림 라이팅: 곡의 accentColor로 가장자리를 아주 얇게 밝힘
+          IgnorePointer(
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: accentColor.withValues(alpha: 0.16),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.10),
+                    blurRadius: 10,
+                    spreadRadius: -2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 디스크 하이라이트: 좌상단에서 빛이 스치는 듯한 아주 옅은 타원 반사
+          Positioned(
+            top: size * 0.10,
+            left: size * 0.16,
+            child: IgnorePointer(
+              child: Container(
+                width: size * 0.30,
+                height: size * 0.16,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(size * 0.16),
+                  gradient: RadialGradient(
+                    colors: [
+                      Colors.white.withValues(alpha: 0.05),
+                      Colors.white.withValues(alpha: 0.0),
+                    ],
+                  ),
                 ),
               ),
             ),
