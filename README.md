@@ -51,7 +51,7 @@
 | **Development Period** | Dec 14, 2025 ~ Present (Solo development) |
 | **Source Files** | ~43 Dart files + Kotlin Native bridge |
 | **Status** | Released on Google Play Store (Mar 5, 2026) |
-| **Installs** | 227 installs across 44 countries (as of May 6, 2026) |
+| **Installs** | 227 installs across 59 countries (as of May 6, 2026) |
 
 GLASNYL is a solo-developed Android music player built with Flutter and Kotlin Native. Rather than playing music itself, it reads the playback state of any music app — Spotify, YouTube Music, Melon — via Android's MediaSession API, and overlays a fully reactive visual experience: real-time album art palette theming, millisecond-accurate lyrics synchronization, and live FFT spectrum visualization.
 
