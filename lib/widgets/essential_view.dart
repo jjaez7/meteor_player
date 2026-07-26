@@ -130,9 +130,15 @@ class _EssentialViewState extends State<EssentialView>
   // ── (v4) 커스텀 타이틀 / 포커스 모드 / 하단 플레이어 자유 배치
   String? _customTitle; // null이면 기본 "AESTHETIC" 표시
   bool _focusMode = false; // true면 배경+하단플레이어+가사 외엔 다 숨김
-  Offset _footerOffset = Offset.zero; // 기본 위치 대비 드래그 이동량
-  double _footerWidthDelta = 0.0; // 기본 너비 대비 리사이즈 증감량
-  double _footerHeightDelta = 0.0; // 기본 높이 대비 리사이즈 증감량
+  // 발열 대책: 드래그 중 setState로 전체 트리(배경 32-sigma 블러 포함)가
+  // 매 pointer-move마다 다시 그려지고 있었음 → ValueNotifier로 바꿔서
+  // 드래그/리사이즈가 하단 플레이어 영역만 다시 그리도록 격리
+  final ValueNotifier<Offset> _footerOffsetVN = ValueNotifier(Offset.zero);
+  final ValueNotifier<double> _footerWDeltaVN = ValueNotifier(0.0);
+  final ValueNotifier<double> _footerHDeltaVN = ValueNotifier(0.0);
+  late final Listenable _footerTransformListenable = Listenable.merge(
+    [_footerOffsetVN, _footerWDeltaVN, _footerHDeltaVN],
+  );
   static const String _kCustomTitleKey = 'essential_custom_title';
   static const String _kFocusModeKey = 'essential_focus_mode';
   static const String _kFooterDxKey = 'essential_footer_dx';
@@ -143,24 +149,24 @@ class _EssentialViewState extends State<EssentialView>
   Future<void> _loadFooterPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    _footerOffsetVN.value = Offset(
+      prefs.getDouble(_kFooterDxKey) ?? 0.0,
+      prefs.getDouble(_kFooterDyKey) ?? 0.0,
+    );
+    _footerWDeltaVN.value = prefs.getDouble(_kFooterWKey) ?? 0.0;
+    _footerHDeltaVN.value = prefs.getDouble(_kFooterHKey) ?? 0.0;
     setState(() {
       _customTitle = prefs.getString(_kCustomTitleKey);
       _focusMode = prefs.getBool(_kFocusModeKey) ?? false;
-      _footerOffset = Offset(
-        prefs.getDouble(_kFooterDxKey) ?? 0.0,
-        prefs.getDouble(_kFooterDyKey) ?? 0.0,
-      );
-      _footerWidthDelta = prefs.getDouble(_kFooterWKey) ?? 0.0;
-      _footerHeightDelta = prefs.getDouble(_kFooterHKey) ?? 0.0;
     });
   }
 
   Future<void> _saveFooterTransform() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_kFooterDxKey, _footerOffset.dx);
-    await prefs.setDouble(_kFooterDyKey, _footerOffset.dy);
-    await prefs.setDouble(_kFooterWKey, _footerWidthDelta);
-    await prefs.setDouble(_kFooterHKey, _footerHeightDelta);
+    await prefs.setDouble(_kFooterDxKey, _footerOffsetVN.value.dx);
+    await prefs.setDouble(_kFooterDyKey, _footerOffsetVN.value.dy);
+    await prefs.setDouble(_kFooterWKey, _footerWDeltaVN.value);
+    await prefs.setDouble(_kFooterHKey, _footerHDeltaVN.value);
   }
 
   Future<void> _saveCustomTitle(String? value) async {
@@ -355,6 +361,14 @@ class _EssentialViewState extends State<EssentialView>
       _simulateTick(dt);
       _updateBeatsAndParticles(dt);
       _repaintTick.value++;
+
+      // 발열/배터리 대책: 정지 상태로 완전히 가라앉으면 티커 자체를 멈춤.
+      // 기존엔 멈춰있어도 계속 60fps로 sin/random 연산이 돌고 있었음.
+      if (!widget.isPlaying &&
+          _bands.every((v) => v < 0.002) &&
+          _beatPulse < 0.002) {
+        _simTicker?.stop();
+      }
     });
     _simTicker!.start();
   }
@@ -479,6 +493,13 @@ class _EssentialViewState extends State<EssentialView>
   @override
   void didUpdateWidget(EssentialView old) {
     super.didUpdateWidget(old);
+    // 발열 대책으로 정지시켰던 티커를 재생 재개 시 다시 깨움
+    if (!old.isPlaying &&
+        widget.isPlaying &&
+        _useSimulation &&
+        (_simTicker == null || !_simTicker!.isTicking)) {
+      _simTicker?.start();
+    }
     if (old.title != widget.title) {
       for (int i = 0; i < _bandCount; i++) {
         _bands[i] = 0.0;
@@ -501,6 +522,9 @@ class _EssentialViewState extends State<EssentialView>
     _enterController.dispose();
     _toggleAnim.dispose();
     _repaintTick.dispose();
+    _footerOffsetVN.dispose();
+    _footerWDeltaVN.dispose();
+    _footerHDeltaVN.dispose();
     super.dispose();
   }
 
@@ -533,7 +557,10 @@ class _EssentialViewState extends State<EssentialView>
     final double ringCx = screenW / 2;
     final double ringCy = specTop + specH / 2;
 
-    // ── (v4) 하단 플레이어 자유 배치 — 기본 위치/크기에 드래그·리사이즈 증감량 적용
+    // ── (v4) 하단 플레이어 자유 배치 — 기본(드래그 전) 위치/크기.
+    // 실제 offset/resize 반영 좌표는 _footerGeometry()에서 매번 계산 —
+    // ValueNotifier 기반 AnimatedBuilder 안에서만 재계산되어, 드래그 중에도
+    // 배경 블러 등 나머지 트리는 다시 그려지지 않음 (발열 대책)
     final double footerBaseLeft = mq.padding.left + 28;
     final double footerBaseRight = mq.padding.right + 28;
     final double footerBaseWidth = screenW - footerBaseLeft - footerBaseRight;
@@ -541,14 +568,20 @@ class _EssentialViewState extends State<EssentialView>
     final double footerBaseTop =
         screenH - (mq.padding.bottom + 32.0) - footerBaseHeight;
 
-    final double footerWidth =
-        (footerBaseWidth + _footerWidthDelta).clamp(180.0, screenW - 20.0);
-    final double footerHeight =
-        (footerBaseHeight + _footerHeightDelta).clamp(64.0, screenH * 0.7);
-    final double footerLeft = (footerBaseLeft + _footerOffset.dx)
-        .clamp(0.0, math.max(0.0, screenW - footerWidth));
-    final double footerTop = (footerBaseTop + _footerOffset.dy)
-        .clamp(mq.padding.top, math.max(mq.padding.top, screenH - mq.padding.bottom - footerHeight));
+    // (left, top, width, height)를 반환 — 리사이즈/드래그 값을 반영해 클램프
+    ({double left, double top, double width, double height}) footerGeometry() {
+      final double width_ = (footerBaseWidth + _footerWDeltaVN.value)
+          .clamp(180.0, screenW - 20.0);
+      final double height_ = (footerBaseHeight + _footerHDeltaVN.value)
+          .clamp(64.0, screenH * 0.7);
+      final double left_ = (footerBaseLeft + _footerOffsetVN.value.dx)
+          .clamp(0.0, math.max(0.0, screenW - width_));
+      final double top_ = (footerBaseTop + _footerOffsetVN.value.dy).clamp(
+        mq.padding.top,
+        math.max(mq.padding.top, screenH - mq.padding.bottom - height_),
+      );
+      return (left: left_, top: top_, width: width_, height: height_);
+    }
 
     return SizedBox.expand(
       child: FadeTransition(
@@ -780,56 +813,62 @@ class _EssentialViewState extends State<EssentialView>
                   ),
 
               // ── 하단 곡 정보 — 자유 드래그 + 모서리 리사이즈
-              Positioned(
-                left: footerLeft,
-                top: footerTop,
-                width: footerWidth,
-                height: footerHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    GestureDetector(
-                      onPanUpdate: (d) {
-                        setState(() => _footerOffset += d.delta);
-                      },
-                      onPanEnd: (_) => _saveFooterTransform(),
-                      child: _EssentialFooter(
-                        title: widget.title,
-                        artist: widget.artist,
-                        albumName: widget.albumName,
-                        isPlaying: widget.isPlaying,
-                        accentColor: widget.accentColor,
-                        albumArtBytes: widget.albumArtBytes,
-                        width: footerWidth,
-                        height: footerHeight,
-                        onTogglePlay: widget.onTogglePlay,
-                        onSkipNext: widget.onSkipNext,
-                        onSkipPrevious: widget.onSkipPrevious,
-                      ),
-                    ),
-                    // 리사이즈 손잡이 (우하단 모서리)
-                    Positioned(
-                      right: -8,
-                      bottom: -8,
-                      child: GestureDetector(
-                        onPanUpdate: (d) {
-                          setState(() {
-                            _footerWidthDelta += d.delta.dx;
-                            _footerHeightDelta += d.delta.dy;
-                          });
-                        },
-                        onPanEnd: (_) => _saveFooterTransform(),
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: widget.accentColor.withValues(alpha: 0.85),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
-                                blurRadius: 6,
-                              ),
+              // 발열 대책: AnimatedBuilder로 감싸서 드래그 중엔 이 서브트리만
+              // 다시 그려짐 (배경 블러/halo/FFT 등 나머지는 재계산 안 됨)
+              AnimatedBuilder(
+                animation: _footerTransformListenable,
+                builder: (context, _) {
+                  final geo = footerGeometry();
+                  return Positioned(
+                    left: geo.left,
+                    top: geo.top,
+                    width: geo.width,
+                    height: geo.height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        GestureDetector(
+                          onPanUpdate: (d) {
+                            _footerOffsetVN.value += d.delta;
+                          },
+                          onPanEnd: (_) => _saveFooterTransform(),
+                          child: RepaintBoundary(
+                            child: _EssentialFooter(
+                              title: widget.title,
+                              artist: widget.artist,
+                              albumName: widget.albumName,
+                              isPlaying: widget.isPlaying,
+                              accentColor: widget.accentColor,
+                              albumArtBytes: widget.albumArtBytes,
+                              width: geo.width,
+                              height: geo.height,
+                              onTogglePlay: widget.onTogglePlay,
+                              onSkipNext: widget.onSkipNext,
+                              onSkipPrevious: widget.onSkipPrevious,
+                            ),
+                          ),
+                        ),
+                        // 리사이즈 손잡이 (우하단 모서리)
+                        Positioned(
+                          right: -8,
+                          bottom: -8,
+                          child: GestureDetector(
+                            onPanUpdate: (d) {
+                              _footerWDeltaVN.value += d.delta.dx;
+                              _footerHDeltaVN.value += d.delta.dy;
+                            },
+                            onPanEnd: (_) => _saveFooterTransform(),
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: widget.accentColor.withValues(alpha: 0.85),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 6,
+                                  ),
                             ],
                           ),
                           child: const Icon(
@@ -841,14 +880,21 @@ class _EssentialViewState extends State<EssentialView>
                       ),
                     ),
                   ],
-                ),
+                    ),
+                  );
+                },
               ),
 
               // ── (v4) 포커스 모드 토글 — 항상 표시(포커스 중에도 꺼야 하니까)
               // 상단(설정 버튼과 겹침) 대신 우하단, 하단 플레이어 바로 위에 배치.
+              // 발열 대책: 이것도 AnimatedBuilder로 감싸서 드래그 중 전체 리빌드 방지.
               // footerTop을 기준으로 붙여서 하단 플레이어를 드래그/리사이즈 해도
               // 항상 그 위쪽에 떠 있고, 상단 세이프존 아래로는 내려가지 않도록 clamp.
-              Positioned(
+              AnimatedBuilder(
+                animation: _footerTransformListenable,
+                builder: (context, _) {
+                  final double footerTop = footerGeometry().top;
+                  return Positioned(
                 top: (footerTop - 44).clamp(
                   mq.padding.top + 12,
                   screenH - mq.padding.bottom - 44,
@@ -880,6 +926,8 @@ class _EssentialViewState extends State<EssentialView>
                     ),
                   ),
                 ),
+                  );
+                },
               ),
             ],
           ),

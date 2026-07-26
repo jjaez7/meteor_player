@@ -31,15 +31,25 @@ class ReleaseNoteItem {
 // ★ 여기에 버전 올릴 때마다 맨 위에 추가하세요
 const List<ReleaseNote> kReleaseNotes = [
   ReleaseNote(
+    version: "1.0.4",
+    date: "2026-07-26",
+    items: [
+      ReleaseNoteItem(NoteType.fix, "Bug fixed"),
+    ],
+    
+  ),
+  ReleaseNote(
     version: "1.0.3",
     date: "2026-07-25",
     items: [
-      ReleaseNoteItem(NoteType.improvement, "AESHETIC Mode CHanged"),
-      ReleaseNoteItem(NoteType.feature, "You can change the title and make the title invisible"),
-      ReleaseNoteItem(NoteType.improvement, "The main design has been modified"),
-      ReleaseNoteItem(NoteType.fix, "Few Bug fixed"),
+      ReleaseNoteItem(NoteType.feature, "AESTHETIC mode: tap the title to rename it to whatever you like"),
+      ReleaseNoteItem(NoteType.feature, "AESTHETIC mode: the bottom player bar can now be freely dragged and resized — enlarge it to reveal a square album art layout"),
+      ReleaseNoteItem(NoteType.feature, "AESTHETIC mode: added Previous/Next track controls, including edge-of-screen tap zones"),
+      ReleaseNoteItem(NoteType.feature, "AESTHETIC mode: new Focus toggle that hides everything except the background, lyrics, and bottom player"),
+      ReleaseNoteItem(NoteType.improvement, "Refined the glass material system across the app — softer blur, consistent corner radius, spacing, and motion"),
+      ReleaseNoteItem(NoteType.improvement, "AESTHETIC mode visuals refined: calmer FFT glow, a subtle breathing accent halo, and improved background color grading"),
+      ReleaseNoteItem(NoteType.improvement, "Reduced heat and battery drain in AESTHETIC mode by cutting unnecessary background redraws and idling animations when playback is paused"),
     ],
-    
   ),
   ReleaseNote(
     version: "1.0.2",
